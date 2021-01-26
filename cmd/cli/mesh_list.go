@@ -89,7 +89,7 @@ func getJoinedNamespaces(clientSet kubernetes.Interface, meshN string) []string 
 				jNs = append(jNs, ns.Name)
 			}
 		}
-	}else{
+	} else {
 		jNs = append(jNs, "No namespace joined yet")
 	}
 	return jNs
