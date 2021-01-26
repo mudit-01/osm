@@ -81,16 +81,17 @@ func (l *meshListCmd) run() error {
 
 // getJoinedNamespaces returns a list of joined namespaces corresponding to a mesh
 func getJoinedNamespaces(clientSet kubernetes.Interface, meshN string) []string {
-	selector := constants.OSMKubeResourceMonitorAnnotation
-	namespaces, _ := clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: selector})
+	namespaces, _ := clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: constants.OSMKubeResourceMonitorAnnotation})
 	var jNs []string
-
-	for _, ns := range namespaces.Items {
-		if ns.ObjectMeta.Labels[constants.OSMKubeResourceMonitorAnnotation] == meshN {
-			jNs = append(jNs, ns.Name)
+	if len(namespaces.Items) != 0 {
+		for _, ns := range namespaces.Items {
+			if ns.ObjectMeta.Labels[constants.OSMKubeResourceMonitorAnnotation] == meshN {
+				jNs = append(jNs, ns.Name)
+			}
 		}
+	}else{
+		jNs = append(jNs, "No namespace joined yet")
 	}
-
 	return jNs
 }
 
