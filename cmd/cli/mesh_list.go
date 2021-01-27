@@ -70,7 +70,7 @@ func (l *meshListCmd) run() error {
 	for _, elem := range list.Items {
 		m := elem.ObjectMeta.Labels["meshName"]
 		ns := elem.ObjectMeta.Namespace
-		var jNs []string //joined namespace array
+		var jNs []string    //joined namespace array
 		var podsNs []string //controller pod array
 		namespaces, _ := l.clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: constants.OSMKubeResourceMonitorAnnotation})
 
