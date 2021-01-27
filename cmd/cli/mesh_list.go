@@ -83,7 +83,6 @@ func (l *meshListCmd) run() error {
 		} else {
 			jNs = append(jNs, "No namespace joined yet")
 		}
-		
 		labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"app": constants.OSMControllerName}}
 		listOptions := metav1.ListOptions{
 			LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
