@@ -75,7 +75,8 @@ var _ = Describe("Running the mesh list command", func() {
 				}),
 			}))
 		})
-		It("Should return map with controller pods and joined namespaces", func() {
+		
+		It("Should return map with pods and joined namespaces", func() {
 			fakeClientSet := fake.NewSimpleClientset(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "osm-controller-podd",
@@ -103,7 +104,7 @@ var _ = Describe("Running the mesh list command", func() {
 			Expect(getNamespacePods(fakeClientSet, "osm", "osm-system")).To(Equal(map[string][]string{"Joined Namespaces": {"book", "notes"}, "Pods": {"osm-controller-podd"}}))
 		})
 	})
-
+	
 	Context("when no control planes exist", func() {
 		var (
 			out           *bytes.Buffer
