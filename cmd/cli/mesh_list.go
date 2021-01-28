@@ -70,33 +70,39 @@ func (l *meshListCmd) run() error {
 	for _, elem := range list.Items {
 		m := elem.ObjectMeta.Labels["meshName"]
 		ns := elem.ObjectMeta.Namespace
-		var jNs []string    //joined namespace array
-		var podsNs []string //controller pod array
-		namespaces, _ := l.clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: constants.OSMKubeResourceMonitorAnnotation})
-
-		if len(namespaces.Items) != 0 {
-			for _, ns := range namespaces.Items {
-				if ns.ObjectMeta.Labels[constants.OSMKubeResourceMonitorAnnotation] == m {
-					jNs = append(jNs, ns.Name)
-				}
-			}
-		} else {
-			jNs = append(jNs, "No namespace joined yet")
-		}
-		labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"app": constants.OSMControllerName}}
-		listOptions := metav1.ListOptions{
-			LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
-		}
-		pods, _ := l.clientSet.CoreV1().Pods(ns).List(context.TODO(), listOptions)
-		for pno := 0; pno < len(pods.Items); pno++ {
-			podsNs = append(podsNs, pods.Items[pno].GetName())
-		}
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(podsNs, ","), strings.Join(jNs, ","))
+		x := getNamespacePods(l.clientSet, m, ns)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","), strings.Join(x["Joined Namespaces"], ","))	
 	}
+	
 	_ = w.Flush()
 
 	return nil
+}
+
+// getNamespacePods returns a map of controller pods and joined namespaces
+func getNamespacePods(clientSet kubernetes.Interface, m string, ns string) map[string][]string {
+	x := make(map[string][]string)
+	namespaces, _ := clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: constants.OSMKubeResourceMonitorAnnotation})
+	if len(namespaces.Items) != 0 {
+		for _, ns := range namespaces.Items {
+			if ns.ObjectMeta.Labels[constants.OSMKubeResourceMonitorAnnotation] == m {
+				x["Joined Namespaces"] = append(x["Joined Namespaces"], ns.Name)
+			}
+		}
+	} else {
+		x["Joined Namespaces"] = append(x["Joined Namespaces"], "No namespace joined yet")
+	}
+
+	labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"app": constants.OSMControllerName}}
+	listOptions := metav1.ListOptions{
+		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
+	}
+	pods, _ := clientSet.CoreV1().Pods(ns).List(context.TODO(), listOptions)
+	for pno := 0; pno < len(pods.Items); pno++ {
+		x["Pods"] = append(x["Pods"], pods.Items[pno].GetName())
+	}
+
+	return x
 }
 
 // getControllerDeployments returns a list of Deployments corresponding to osm-controller
