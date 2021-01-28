@@ -73,7 +73,6 @@ func (l *meshListCmd) run() error {
 		x := getNamespacePods(l.clientSet, m, ns)
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","), strings.Join(x["Joined Namespaces"], ","))
 	}
-	
 	_ = w.Flush()
 
 	return nil
