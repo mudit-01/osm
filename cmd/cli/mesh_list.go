@@ -71,7 +71,7 @@ func (l *meshListCmd) run() error {
 		m := elem.ObjectMeta.Labels["meshName"]
 		ns := elem.ObjectMeta.Namespace
 		x := getNamespacePods(l.clientSet, m, ns)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","), strings.Join(x["Joined Namespaces"], ","))	
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","), strings.Join(x["Joined Namespaces"], ","))
 	}
 	
 	_ = w.Flush()
