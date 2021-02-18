@@ -63,15 +63,13 @@ func (l *meshListCmd) run() error {
 	}
 
 	w := newTabWriter(l.out)
-	nds, _ := l.clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 
-	fmt.Fprintf(w, "OSM Deployments on cluster %s\n", nds.Items[0].GetName())
-	fmt.Fprintln(w, "\nMESH NAME\tNAMESPACE\tCONTROLLER PODS\tJOINED NAMESPACES\t")
+	fmt.Fprintln(w, "\nMESH NAME\tNAMESPACE\tCONTROLLER PODS")
 	for _, elem := range list.Items {
 		m := elem.ObjectMeta.Labels["meshName"]
 		ns := elem.ObjectMeta.Namespace
 		x := getNamespacePods(l.clientSet, m, ns)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","), strings.Join(x["Joined Namespaces"], ","))
+		fmt.Fprintf(w, "%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","))
 	}
 	_ = w.Flush()
 
@@ -81,16 +79,6 @@ func (l *meshListCmd) run() error {
 // getNamespacePods returns a map of controller pods and joined namespaces
 func getNamespacePods(clientSet kubernetes.Interface, m string, ns string) map[string][]string {
 	x := make(map[string][]string)
-	namespaces, _ := clientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: constants.OSMKubeResourceMonitorAnnotation})
-	if len(namespaces.Items) != 0 {
-		for _, ns := range namespaces.Items {
-			if ns.ObjectMeta.Labels[constants.OSMKubeResourceMonitorAnnotation] == m {
-				x["Joined Namespaces"] = append(x["Joined Namespaces"], ns.Name)
-			}
-		}
-	} else {
-		x["Joined Namespaces"] = append(x["Joined Namespaces"], "No namespace joined yet")
-	}
 
 	labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"app": constants.OSMControllerName}}
 	listOptions := metav1.ListOptions{
