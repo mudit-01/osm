@@ -76,7 +76,7 @@ func (l *meshListCmd) run() error {
 	return nil
 }
 
-// getNamespacePods returns a map of controller pods and joined namespaces
+// getNamespacePods returns a map of controller pods
 func getNamespacePods(clientSet kubernetes.Interface, m string, ns string) map[string][]string {
 	x := make(map[string][]string)
 
