@@ -4,16 +4,20 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/golang/mock/gomock"
+	tassert "github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	testclient "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/openservicemesh/osm/pkg/announcements"
 	"github.com/openservicemesh/osm/pkg/configurator"
@@ -180,16 +184,42 @@ var _ = Describe("Test Kube Client Provider (w/o kubecontroller)", func() {
 					},
 					Ports: []v1.EndpointPort{
 						{
-							Name:        "port",
-							Port:        88,
+							Name:        "port1", // appProtocol specified
+							Port:        70,
 							Protocol:    v1.ProtocolTCP,
 							AppProtocol: &appProtoTCP,
 						},
 						{
-							Name:        "port",
+							Name:        "port2", // appProtocol specified
 							Port:        80,
 							Protocol:    v1.ProtocolTCP,
 							AppProtocol: &appProtoHTTP,
+						},
+						{
+							Name:     "http-port3", // appProtocol derived from port name
+							Port:     90,
+							Protocol: v1.ProtocolTCP,
+						},
+						{
+							Name:     "tcp-port4", // appProtocol derived from port name
+							Port:     100,
+							Protocol: v1.ProtocolTCP,
+						},
+						{
+							Name:     "grpc-port5", // appProtocol derived from port name
+							Port:     110,
+							Protocol: v1.ProtocolTCP,
+						},
+						{
+							Name:     "no-protocol-prefix", // appProtocol defaults to http
+							Port:     120,
+							Protocol: v1.ProtocolTCP,
+						},
+						{
+							Name:        "http-prefix",
+							Port:        130,
+							Protocol:    v1.ProtocolTCP,
+							AppProtocol: &appProtoTCP, // AppProtocol takes precedence over Name
 						},
 					},
 				},
@@ -199,7 +229,7 @@ var _ = Describe("Test Kube Client Provider (w/o kubecontroller)", func() {
 		portToProtocolMap, err := provider.GetTargetPortToProtocolMappingForService(tests.BookbuyerService)
 		Expect(err).To(BeNil())
 
-		expectedPortToProtocolMap := map[uint32]string{88: appProtoTCP, 80: appProtoHTTP}
+		expectedPortToProtocolMap := map[uint32]string{70: "tcp", 80: "http", 90: "http", 100: "tcp", 110: "grpc", 120: "http", 130: "tcp"}
 		Expect(portToProtocolMap).To(Equal(expectedPortToProtocolMap))
 	})
 })
@@ -526,3 +556,84 @@ var _ = Describe("Test Kube Client Provider (/w kubecontroller)", func() {
 		<-podsAndServiceChannel
 	})
 })
+
+func TestListEndpointsForIdentity(t *testing.T) {
+	assert := tassert.New(t)
+
+	testCases := []struct {
+		name                            string
+		serviceAccount                  service.K8sServiceAccount
+		outboundServiceAccountEndpoints map[service.K8sServiceAccount][]endpoint.Endpoint
+		expectedEndpoints               []endpoint.Endpoint
+	}{
+		{
+			name:           "get endpoints for pod with only one ip",
+			serviceAccount: tests.BookstoreServiceAccount,
+			outboundServiceAccountEndpoints: map[service.K8sServiceAccount][]endpoint.Endpoint{
+				tests.BookstoreServiceAccount: {{
+					IP: net.ParseIP(tests.ServiceIP),
+				}},
+			},
+			expectedEndpoints: []endpoint.Endpoint{{
+				IP: net.ParseIP(tests.ServiceIP),
+			}},
+		},
+		{
+			name:           "get endpoints for pod with multiple ips",
+			serviceAccount: tests.BookstoreServiceAccount,
+			outboundServiceAccountEndpoints: map[service.K8sServiceAccount][]endpoint.Endpoint{
+				tests.BookstoreServiceAccount: {
+					endpoint.Endpoint{
+						IP: net.ParseIP(tests.ServiceIP),
+					},
+					endpoint.Endpoint{
+						IP: net.ParseIP("9.9.9.9"),
+					},
+				},
+			},
+			expectedEndpoints: []endpoint.Endpoint{{
+				IP: net.ParseIP(tests.ServiceIP),
+			},
+				{
+					IP: net.ParseIP("9.9.9.9"),
+				}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			kubeClient := testclient.NewSimpleClientset()
+			defer mockCtrl.Finish()
+
+			mockKubeController := k8s.NewMockController(mockCtrl)
+			mockConfigurator := configurator.NewMockConfigurator(mockCtrl)
+			providerID := "provider"
+
+			provider, err := NewProvider(kubeClient, mockKubeController, providerID, mockConfigurator)
+			assert.Nil(err)
+
+			var pods []*v1.Pod
+			for sa, endpoints := range tc.outboundServiceAccountEndpoints {
+				podlabels := map[string]string{
+					tests.SelectorKey:                tests.SelectorValue,
+					constants.EnvoyUniqueIDLabelName: uuid.New().String(),
+				}
+				pod := tests.NewPodFixture(sa.Namespace, sa.Name, sa.Name, podlabels)
+				var podIps []v1.PodIP
+				for _, ep := range endpoints {
+					podIps = append(podIps, v1.PodIP{IP: ep.IP.String()})
+				}
+				pod.Status.PodIPs = podIps
+				_, err := kubeClient.CoreV1().Pods(sa.Namespace).Create(context.TODO(), &pod, metav1.CreateOptions{})
+				assert.Nil(err)
+				pods = append(pods, &pod)
+			}
+			mockKubeController.EXPECT().ListPods().Return(pods).AnyTimes()
+
+			actual := provider.ListEndpointsForIdentity(tc.serviceAccount)
+			assert.NotNil(actual)
+			assert.ElementsMatch(actual, tc.expectedEndpoints)
+		})
+	}
+}

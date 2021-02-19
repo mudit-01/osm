@@ -3,15 +3,19 @@ on:
   push:
     branches:
       - main
+      - release-*
     paths-ignore:
       - "docs/**"
       - "**.md"
+      - "scripts/cleanup/**"
   pull_request:
     branches:
       - main
+      - release-*
     paths-ignore:
       - "docs/**"
       - "**.md"
+      - "scripts/cleanup/**"
 env:
   CI_WAIT_FOR_OK_SECONDS: 60
   CI_MAX_ITERATIONS_THRESHOLD: 60
@@ -50,6 +54,15 @@ jobs:
         uses: actions/checkout@v1
       - name: go mod tidy
         run: make go-mod-tidy
+
+  charts:
+    name: Chart checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+      - name: chart checks
+        run: make chart-checks
 
   build:
     name: Go build
@@ -103,7 +116,7 @@ jobs:
         run: make go-test-coverage
       - name: Upload Coverage
         if: ${{ success() }}
-        run: bash <(curl -s https://codecov.io/bash)
+        run: bash <(curl -s https://codecov.io/bash) -F unittests
 
   scenarios_tests:
     name: Test various Envoy + SMI configuration scenarios
@@ -164,13 +177,17 @@ jobs:
         with:
           go-version: 1.15
       - name: Build test dependencies
-        run: make docker-build-osm-controller docker-build-init build-osm docker-build-tcp-echo-server
+        run: make docker-build-osm-controller docker-build-osm-injector docker-build-init build-osm docker-build-tcp-echo-server
       - name: Run PR tests
         if: ${{ github.event_name == 'pull_request' }}
-        run: go test ./tests/e2e -test.v -ginkgo.v -ginkgo.progress -installType=KindCluster -test.timeout 0 -test.failfast -ginkgo.failFast -ginkgo.focus='\[Tier 1\]\[Bucket ${{ matrix.bucket }}\]'
-      - name: Run tests for push to main
+        run: go test ./tests/e2e -test.v -ginkgo.v -ginkgo.progress -installType=KindCluster -test.timeout 0 -test.failfast -ginkgo.failFast -ginkgo.focus='\[Tier 1\]\[Bucket ${{ matrix.bucket }}\]' -ginkgo.skip='Upgrade'
+      - name: Run push tests
         if: ${{ github.event_name == 'push' }}
-        run: go test ./tests/e2e -test.v -ginkgo.v -ginkgo.progress -installType=KindCluster -test.timeout 0 -test.failfast -ginkgo.failFast -ginkgo.focus='\[Bucket ${{ matrix.bucket }}\]'
+        run: go test ./tests/e2e -test.v -ginkgo.v -ginkgo.progress -installType=KindCluster -test.timeout 0 -test.failfast -ginkgo.failFast -ginkgo.focus='\[Bucket ${{ matrix.bucket }}\]' -ginkgo.skip='Upgrade'
+      - name: Run upgrade tests
+        # Only fail CI when upgrade fails if we're running on a release branch. The main branch may introduce breaking changes at any time.
+        continue-on-error: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-') || github.event_name == 'pull_request' && startsWith(github.base_ref, 'refs/heads/release-')) }}
+        run: go test ./tests/e2e -test.v -ginkgo.v -ginkgo.progress -installType=KindCluster -test.timeout 0 -test.failfast -ginkgo.failFast -ginkgo.focus='\[Bucket ${{ matrix.bucket }}\].*Upgrade'
 
   integration-tresor:
     name: Integration Test with Tresor, SMI traffic policies, and egress disabled
@@ -218,7 +235,7 @@ jobs:
   images:
     name: Docker Images
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     env:
       DOCKER_USER: ${{ secrets.RELEASE_DOCKER_USER }}
       DOCKER_PASS: ${{ secrets.RELEASE_DOCKER_PASS }}

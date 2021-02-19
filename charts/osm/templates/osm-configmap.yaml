@@ -10,8 +10,8 @@ data:
   enable_debug_server: {{ .Values.OpenServiceMesh.enableDebugServer | quote }}
   prometheus_scraping: {{ .Values.OpenServiceMesh.enablePrometheusScraping | quote }}
 
-{{- if .Values.OpenServiceMesh.tracing.enable }}
   tracing_enable: {{ .Values.OpenServiceMesh.tracing.enable | quote }}
+{{- if .Values.OpenServiceMesh.tracing.enable }}
   tracing_address: {{ .Values.OpenServiceMesh.tracing.address | quote }}
   tracing_port: {{ .Values.OpenServiceMesh.tracing.port | quote }}
   tracing_endpoint: {{ .Values.OpenServiceMesh.tracing.endpoint | quote }}
@@ -19,3 +19,7 @@ data:
 
   use_https_ingress: {{ .Values.OpenServiceMesh.useHTTPSIngress | default "false" | quote }}
   service_cert_validity_duration: {{ .Values.OpenServiceMesh.serviceCertValidityDuration | quote }}
+
+{{- if .Values.OpenServiceMesh.outboundIPRangeExclusionList }}
+  outbound_ip_range_exclusion_list: {{ join "," .Values.OpenServiceMesh.outboundIPRangeExclusionList | quote }}
+{{- end}}

@@ -247,10 +247,7 @@ func TestCheckDefaultFields(t *testing.T) {
 
 func TestValidateFields(t *testing.T) {
 	assert := tassert.New(t)
-	resp := &v1beta1.AdmissionResponse{
-		Allowed: true,
-		Result:  &metav1.Status{Reason: ""},
-	}
+
 	cm := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: whc.osmNamespace,
@@ -316,12 +313,42 @@ func TestValidateFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			testName: "Accept configmap with valid outbound IP range exclusions",
+			configMap: corev1.ConfigMap{
+				Data: map[string]string{
+					"outbound_ip_range_exclusion_list": "1.1.1.1/32, 2.2.2.2/24",
+				},
+			},
+			expRes: &v1beta1.AdmissionResponse{
+				Allowed: true,
+				Result:  &metav1.Status{Reason: ""},
+			},
+		},
+		{
+			testName: "Reject configmap with invalid outbound IP range exclusions",
+			configMap: corev1.ConfigMap{
+				Data: map[string]string{
+					"outbound_ip_range_exclusion_list": "foobar",
+				},
+			},
+			expRes: &v1beta1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Reason: mustBeValidIPRange,
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
+			resp := &v1beta1.AdmissionResponse{
+				Allowed: true,
+				Result:  &metav1.Status{Reason: ""},
+			}
 			res := whc.validateFields(tc.configMap, resp)
 			assert.Contains(tc.expRes.Result.Status, res.Result.Status)
-			assert.Equal(tc.expRes.Allowed, res.Allowed)
+			assert.Equal(tc.expRes.Allowed, res.Allowed, res.Result.Reason)
 		})
 	}
 }

@@ -6,15 +6,108 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
+	split "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/split/v1alpha2"
 	tassert "github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/openservicemesh/osm/pkg/endpoint"
 	"github.com/openservicemesh/osm/pkg/kubernetes"
+	k8s "github.com/openservicemesh/osm/pkg/kubernetes"
 	"github.com/openservicemesh/osm/pkg/service"
+	"github.com/openservicemesh/osm/pkg/smi"
+	"github.com/openservicemesh/osm/pkg/tests"
 )
+
+func TestGetApexServicesForBackend(t *testing.T) {
+	assert := tassert.New(t)
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	testSplit2 := split.TrafficSplit{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: "default",
+		},
+		Spec: split.TrafficSplitSpec{
+			Service: "apex-split-1",
+			Backends: []split.TrafficSplitBackend{
+				{
+					Service: tests.BookstoreV1ServiceName,
+					Weight:  tests.Weight10,
+				},
+				{
+					Service: tests.BookstoreV2ServiceName,
+					Weight:  tests.Weight90,
+				},
+			},
+		},
+	}
+
+	testSplit3 := split.TrafficSplit{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: "bar",
+		},
+		Spec: split.TrafficSplitSpec{
+			Service: "apex-split-1",
+			Backends: []split.TrafficSplitBackend{
+				{
+					Service: tests.BookstoreV1ServiceName,
+					Weight:  tests.Weight10,
+				},
+				{
+					Service: tests.BookstoreV2ServiceName,
+					Weight:  tests.Weight90,
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		trafficsplits []*split.TrafficSplit
+		expected      []service.MeshService
+	}{
+		{
+			name:          "single traffic split match",
+			trafficsplits: []*split.TrafficSplit{&tests.TrafficSplit},
+			expected:      []service.MeshService{tests.BookstoreApexService},
+		},
+		{
+			name:          "multiple traffic split matches",
+			trafficsplits: []*split.TrafficSplit{&tests.TrafficSplit, &testSplit2},
+			expected:      []service.MeshService{tests.BookstoreApexService, {Name: "apex-split-1", Namespace: "default"}},
+		},
+		{
+			name:          "does not match traffic split in different namespace",
+			trafficsplits: []*split.TrafficSplit{&tests.TrafficSplit, &testSplit3},
+			expected:      []service.MeshService{tests.BookstoreApexService},
+		},
+		{
+			name:          "no traffic splits returned",
+			trafficsplits: []*split.TrafficSplit{},
+			expected:      []service.MeshService{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockKubeController := k8s.NewMockController(mockCtrl)
+			mockMeshSpec := smi.NewMockMeshSpec(mockCtrl)
+			mockEndpointProvider := endpoint.NewMockProvider(mockCtrl)
+			mc := MeshCatalog{
+				kubeController:     mockKubeController,
+				meshSpec:           mockMeshSpec,
+				endpointsProviders: []endpoint.Provider{mockEndpointProvider},
+			}
+			mockMeshSpec.EXPECT().ListTrafficSplits().Return(tc.trafficsplits).AnyTimes()
+			actual := mc.GetApexServicesForBackend(tests.BookstoreV1Service)
+			assert.ElementsMatch(tc.expected, actual)
+		})
+	}
+}
 
 func TestListServiceAccountsForService(t *testing.T) {
 	assert := tassert.New(t)
@@ -246,6 +339,32 @@ func TestGetPortToProtocolMappingForResolvableService(t *testing.T) {
 
 		{
 			// Test case 3
+			name: "service with appProtocol and named port specified",
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      svc.Name,
+					Namespace: svc.Namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Name: "http-port1",
+							TargetPort: intstr.IntOrString{
+								Type:   intstr.String,
+								IntVal: 8080,
+							},
+							AppProtocol: &appProtocolTCP, // takes precedence over 'Name'
+							Port:        80,
+						},
+					},
+				},
+			},
+			expectedPortToProtocolMap: map[uint32]string{80: "tcp"},
+			expectError:               false,
+		},
+
+		{
+			// Test case 4
 			name:                      "service doesn't exist",
 			service:                   nil,
 			expectedPortToProtocolMap: nil,

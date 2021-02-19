@@ -37,6 +37,10 @@ spec:
     pathRegex: ".*a-book.*new"
     methods:
     - GET
+  - name: update-books-bought
+    pathRegex: /update-books-bought
+    methods:
+    - POST
 ---
 kind: TrafficTarget
 apiVersion: access.smi-spec.io/v1alpha3
@@ -58,3 +62,7 @@ spec:
   - kind: ServiceAccount
     name: bookbuyer
     namespace: bookbuyer
+  #- kind: ServiceAccount
+    #name: bookthief
+    #namespace: bookthief
+---

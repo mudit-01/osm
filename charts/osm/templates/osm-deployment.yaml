@@ -37,8 +37,6 @@ spec:
             "--verbosity", "{{.Values.OpenServiceMesh.controllerLogLevel}}",
             "--osm-namespace", "{{ include "osm.namespace" . }}",
             "--mesh-name", "{{.Values.OpenServiceMesh.meshName}}",
-            "--init-container-image", "{{.Values.OpenServiceMesh.image.registry}}/init:{{ .Values.OpenServiceMesh.image.tag }}",
-            "--sidecar-image", "{{.Values.OpenServiceMesh.sidecarImage}}",
             "--webhook-config-name", "{{.Values.OpenServiceMesh.webhookConfigNamePrefix}}-{{.Values.OpenServiceMesh.meshName}}",
             "--ca-bundle-secret-name", "{{.Values.OpenServiceMesh.caBundleSecretName}}",
             "--certificate-manager", "{{.Values.OpenServiceMesh.certificateManager}}",
@@ -50,17 +48,17 @@ spec:
             "--cert-manager-issuer-name", "{{.Values.OpenServiceMesh.certmanager.issuerName}}",
             "--cert-manager-issuer-kind", "{{.Values.OpenServiceMesh.certmanager.issuerKind}}",
             "--cert-manager-issuer-group", "{{.Values.OpenServiceMesh.certmanager.issuerGroup}}",
-            {{- if .Values.OpenServiceMesh.enableBackpressureExperimental }}
-            "--enable-backpressure-experimental",
+            {{- if .Values.OpenServiceMesh.enableRoutesV2Experimental }}
+            "--enable-routes-v2-experimental",
             {{- end }}
           ]
           resources:
             limits:
-              cpu: 1.5
-              memory: 256M
+              cpu: "{{.Values.OpenServiceMesh.osmcontroller.resource.limits.cpu}}"
+              memory: "{{.Values.OpenServiceMesh.osmcontroller.resource.limits.memory}}"
             requests:
-              cpu: 0.5
-              memory: 32M
+              cpu: "{{.Values.OpenServiceMesh.osmcontroller.resource.requests.cpu}}"
+              memory: "{{.Values.OpenServiceMesh.osmcontroller.resource.requests.memory}}"
           readinessProbe:
             initialDelaySeconds: 1
             timeoutSeconds: 5

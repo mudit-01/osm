@@ -35,10 +35,10 @@ const (
 	OutboundRouteConfigName = "RDS_Outbound"
 
 	// inboundVirtualHost is the name of the virtual host on the inbound route configuration
-	inboundVirtualHost = "inbound_virtualHost"
+	inboundVirtualHost = "inbound_virtual-host"
 
 	// outboundVirtualHost is the name of the virtual host on the outbound route configuration
-	outboundVirtualHost = "outbound_virtualHost"
+	outboundVirtualHost = "outbound_virtual-host"
 
 	// MethodHeaderKey is the key of the header for HTTP methods
 	MethodHeaderKey = ":method"
@@ -49,7 +49,6 @@ const (
 
 //UpdateRouteConfiguration constructs the Envoy construct necessary for TrafficTarget implementation
 func UpdateRouteConfiguration(domainRoutesMap map[string]map[string]trafficpolicy.RouteWeightedClusters, routeConfig *xds_route.RouteConfiguration, direction Direction) {
-	log.Trace().Msgf("[RDS] Updating Route Configuration")
 	var virtualHostPrefix string
 
 	switch direction {
@@ -135,7 +134,7 @@ func getHeadersForRoute(method string, headersMap map[string]string) []*xds_rout
 	var headers []*xds_route.HeaderMatcher
 
 	// add methods header
-	methodsHeader := xds_route.HeaderMatcher{
+	methodsHeader := &xds_route.HeaderMatcher{
 		Name: MethodHeaderKey,
 		HeaderMatchSpecifier: &xds_route.HeaderMatcher_SafeRegexMatch{
 			SafeRegexMatch: &xds_matcher.RegexMatcher{
@@ -144,7 +143,7 @@ func getHeadersForRoute(method string, headersMap map[string]string) []*xds_rout
 			},
 		},
 	}
-	headers = append(headers, &methodsHeader)
+	headers = append(headers, methodsHeader)
 
 	// add all other custom headers
 	for headerKey, headerValue := range headersMap {

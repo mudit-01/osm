@@ -15,11 +15,6 @@ import (
 	"github.com/openservicemesh/osm/pkg/service"
 )
 
-const (
-	// defaultAppProtocol is the default application protocol for a port if unspecified
-	defaultAppProtocol = "http"
-)
-
 // NewProvider implements mesh.EndpointsProvider, which creates a new Kubernetes cluster/compute provider.
 func NewProvider(kubeClient kubernetes.Interface, kubeController k8s.Controller, providerIdent string, cfg configurator.Configurator) (endpoint.Provider, error) {
 	client := Client{
@@ -67,6 +62,33 @@ func (c Client) ListEndpointsForService(svc service.MeshService) []endpoint.Endp
 				}
 				endpoints = append(endpoints, ept)
 			}
+		}
+	}
+	return endpoints
+}
+
+// ListEndpointsForIdentity retrieves the list of IP addresses for the given service account
+func (c Client) ListEndpointsForIdentity(sa service.K8sServiceAccount) []endpoint.Endpoint {
+	log.Trace().Msgf("[%s] Getting Endpoints for service account %s on Kubernetes", c.providerIdent, sa)
+	var endpoints []endpoint.Endpoint
+
+	podList := c.kubeController.ListPods()
+	for _, pod := range podList {
+		if pod.Namespace != sa.Namespace {
+			continue
+		}
+		if pod.Spec.ServiceAccountName != sa.Name {
+			continue
+		}
+
+		for _, podIP := range pod.Status.PodIPs {
+			ip := net.ParseIP(podIP.IP)
+			if ip == nil {
+				log.Error().Msgf("[%s] Error parsing IP address %s", c.providerIdent, podIP.IP)
+				break
+			}
+			ept := endpoint.Endpoint{IP: ip}
+			endpoints = append(endpoints, ept)
 		}
 	}
 	return endpoints
@@ -140,9 +162,12 @@ func (c Client) GetTargetPortToProtocolMappingForService(svc service.MeshService
 	// to worry about different application protocols being set.
 	for _, endpointSet := range endpoints.Subsets {
 		for _, port := range endpointSet.Ports {
-			appProtocol := defaultAppProtocol
+			var appProtocol string
 			if port.AppProtocol != nil {
 				appProtocol = *port.AppProtocol
+			} else {
+				appProtocol = k8s.GetAppProtocolFromPortName(port.Name)
+				log.Debug().Msgf("endpoint port name: %s, appProtocol: %s", port.Name, appProtocol)
 			}
 
 			portToProtocolMap[uint32(port.Port)] = appProtocol

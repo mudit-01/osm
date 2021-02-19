@@ -33,10 +33,9 @@ func (wh *mutatingWebhook) createPatch(pod *corev1.Pod, req *v1beta1.AdmissionRe
 
 	metricsstore.DefaultMetricsStore.CertXdsIssuedCount.Inc()
 	metricsstore.DefaultMetricsStore.CertXdsIssuedTime.
-		WithLabelValues(cn.String()).Observe(elapsed.Seconds())
+		WithLabelValues().Observe(elapsed.Seconds())
 	originalHealthProbes := rewriteHealthProbes(pod)
 
-	wh.meshCatalog.ExpectProxy(cn)
 	// Create the bootstrap configuration for the Envoy proxy for the given pod
 	envoyBootstrapConfigName := fmt.Sprintf("envoy-bootstrap-config-%s", proxyUUID)
 	if _, err = wh.createEnvoyBootstrapConfig(envoyBootstrapConfigName, namespace, wh.osmNamespace, bootstrapCertificate, originalHealthProbes); err != nil {
@@ -48,17 +47,11 @@ func (wh *mutatingWebhook) createPatch(pod *corev1.Pod, req *v1beta1.AdmissionRe
 	pod.Spec.Volumes = append(pod.Spec.Volumes, getVolumeSpec(envoyBootstrapConfigName)...)
 
 	// Add the Init Container
-	initContainer := getInitContainerSpec(constants.InitContainerName, wh.config.InitContainerImage)
+	initContainer := getInitContainerSpec(constants.InitContainerName, wh.config.InitContainerImage, wh.configurator.GetOutboundIPRangeExclusionList())
 	pod.Spec.InitContainers = append(pod.Spec.InitContainers, initContainer)
 
-	// envoyNodeID and envoyClusterID are required for Envoy proxy to start.
-	envoyNodeID := pod.Spec.ServiceAccountName
-
-	// envoyCluster ID will be used as an identifier to the tracing sink
-	envoyClusterID := fmt.Sprintf("%s.%s", pod.Spec.ServiceAccountName, namespace)
-
 	// Add the Envoy sidecar
-	sidecar := getEnvoySidecarContainerSpec(constants.EnvoyContainerName, wh.config.SidecarImage, envoyNodeID, envoyClusterID, wh.configurator, originalHealthProbes)
+	sidecar := getEnvoySidecarContainerSpec(pod, wh.config.SidecarImage, wh.configurator, originalHealthProbes)
 	pod.Spec.Containers = append(pod.Spec.Containers, sidecar)
 
 	enableMetrics, err := wh.isMetricsEnabled(namespace)
@@ -90,7 +83,7 @@ func makePatches(req *v1beta1.AdmissionRequest, pod *corev1.Pod) []jsonpatch.Jso
 	original := req.Object.Raw
 	current, err := json.Marshal(pod)
 	if err != nil {
-		log.Err(err).Msgf("Error marshaling Pod %s/%s", pod.Namespace, pod.Name)
+		log.Error().Err(err).Msgf("Error marshaling Pod with UID=%s", pod.ObjectMeta.UID)
 	}
 	admissionResponse := admission.PatchResponseFromRaw(original, current)
 	return admissionResponse.Patches

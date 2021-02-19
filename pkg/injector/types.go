@@ -1,10 +1,11 @@
+// Package injector implements OSM's automatic sidecar injection facility. The sidecar injector's mutating webhook
+// admission controller intercepts pod creation requests to mutate the pod spec to inject the sidecar proxy.
 package injector
 
 import (
 	mapset "github.com/deckarep/golang-set"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/openservicemesh/osm/pkg/catalog"
 	"github.com/openservicemesh/osm/pkg/certificate"
 	"github.com/openservicemesh/osm/pkg/configurator"
 	k8s "github.com/openservicemesh/osm/pkg/kubernetes"
@@ -22,7 +23,6 @@ type mutatingWebhook struct {
 	config         Config
 	kubeClient     kubernetes.Interface
 	certManager    certificate.Manager
-	meshCatalog    catalog.MeshCataloger
 	kubeController k8s.Controller
 	osmNamespace   string
 	cert           certificate.Certificater
@@ -33,9 +33,6 @@ type mutatingWebhook struct {
 
 // Config is the type used to represent the config options for the sidecar injection
 type Config struct {
-	// DefaultInjection defines whether sidecar injection is enabled by default
-	DefaultInjection bool
-
 	// ListenPort defines the port on which the sidecar injector listens
 	ListenPort int
 

@@ -50,7 +50,7 @@ var _ = Describe("Test ADS response functions", func() {
 	mc := catalog.NewFakeMeshCatalog(kubeClient)
 
 	// Create a Pod
-	pod := tests.NewPodTestFixture(namespace, fmt.Sprintf("pod-0-%s", uuid.New()))
+	pod := tests.NewPodFixture(namespace, fmt.Sprintf("pod-0-%s", uuid.New()), tests.BookstoreServiceAccountName, tests.PodLabels)
 	pod.Labels[constants.EnvoyUniqueIDLabelName] = proxyUUID
 	_, err := kubeClient.CoreV1().Pods(namespace).Create(context.TODO(), &pod, metav1.CreateOptions{})
 	It("should have created a pod", func() {
@@ -119,6 +119,7 @@ var _ = Describe("Test ADS response functions", func() {
 		mockConfigurator.EXPECT().IsTracingEnabled().Return(false).AnyTimes()
 		mockConfigurator.EXPECT().IsPermissiveTrafficPolicyMode().Return(false).AnyTimes()
 		mockConfigurator.EXPECT().GetServiceCertValidityPeriod().Return(certDuration).AnyTimes()
+		mockConfigurator.EXPECT().IsDebugServerEnabled().Return(true).AnyTimes()
 
 		It("returns Aggregated Discovery Service response", func() {
 			s := NewADSServer(mc, true, tests.Namespace, mockConfigurator, mockCertManager)
