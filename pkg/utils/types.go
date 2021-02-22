@@ -1,4 +1,3 @@
-// Package utils provides generic utility routines used within OSM.
 package utils
 
 import (

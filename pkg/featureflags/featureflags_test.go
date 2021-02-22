@@ -8,32 +8,22 @@ import (
 var _ = Describe("Test FeatureFlags", func() {
 	Context("Testing OptionalFeatures", func() {
 		It("should initialize OptionalFeatures", func() {
-			defaultRoutesV2 := IsRoutesV2Enabled()
-			Expect(defaultRoutesV2).ToNot(BeTrue())
+			defaultBackpressure := IsBackpressureEnabled()
+			Expect(defaultBackpressure).ToNot(BeTrue())
 
-			defaultWASMStats := IsWASMStatsEnabled()
-			Expect(defaultWASMStats).ToNot(BeTrue())
-
-			optionalFeatures := OptionalFeatures{RoutesV2: true, WASMStats: true}
+			optionalFeatures := OptionalFeatures{Backpressure: true}
 			Initialize(optionalFeatures)
 
-			initializedRoutesV2 := IsRoutesV2Enabled()
-			Expect(initializedRoutesV2).To(BeTrue())
-
-			initializedWASMStats := IsWASMStatsEnabled()
-			Expect(initializedWASMStats).To(BeTrue())
-
+			initializedBackpressure := IsBackpressureEnabled()
+			Expect(initializedBackpressure).To(BeTrue())
 		})
 
 		It("should not re-initialize OptionalFeatures", func() {
-			optionalFeatures2 := OptionalFeatures{RoutesV2: false, WASMStats: false}
+			optionalFeatures2 := OptionalFeatures{Backpressure: false}
 			Initialize(optionalFeatures2)
 
-			routesV2 := IsRoutesV2Enabled()
-			Expect(routesV2).To(BeTrue())
-
-			WASMStats := IsWASMStatsEnabled()
-			Expect(WASMStats).To(BeTrue())
+			backpressure := IsBackpressureEnabled()
+			Expect(backpressure).To(BeTrue())
 		})
 	})
 })

@@ -1,4 +1,3 @@
-// Package vault implements the certificate.Manager interface for Hashicorp Vault as the certificate provider.
 package vault
 
 import (

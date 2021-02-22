@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/openservicemesh/osm/pkg/service"
 )
 
 func TestGetKubernetesServiceIdentity(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	testCases := []struct {
 		svcAccount              service.K8sServiceAccount

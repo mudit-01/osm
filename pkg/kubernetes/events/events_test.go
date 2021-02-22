@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -36,7 +36,7 @@ func setup() {
 }
 
 func TestGenericEventRecording(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	assert.NotNil(GenericEventRecorder().object)
 	assert.NotNil(GenericEventRecorder().recorder)
@@ -55,7 +55,7 @@ func TestGenericEventRecording(t *testing.T) {
 }
 
 func TestSpecificEventRecording(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	kubeClient := fake.NewSimpleClientset()
 

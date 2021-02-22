@@ -3,8 +3,8 @@ package debugger
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	tassert "github.com/stretchr/testify/assert"
+	gomock "github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 	testclient "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/openservicemesh/osm/pkg/configurator"
@@ -13,7 +13,7 @@ import (
 
 // Tests GetHandlers returns the expected debug endpoints and non-nil handlers
 func TestGetHandlers(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 	mockCtrl := gomock.NewController(t)
 
 	mockCertDebugger := NewMockCertificateManagerDebugger(mockCtrl)

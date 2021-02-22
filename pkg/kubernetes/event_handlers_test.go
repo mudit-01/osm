@@ -5,13 +5,11 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/openservicemesh/osm/pkg/announcements"
-	"github.com/openservicemesh/osm/pkg/kubernetes/events"
 	"github.com/openservicemesh/osm/pkg/tests"
 )
 
@@ -29,49 +27,39 @@ var _ = Describe("Testing event handlers", func() {
 		}
 
 		It("Should add the event to the announcement channel", func() {
-			podAddChannel := events.GetPubSubInstance().Subscribe(announcements.PodAdded)
-			defer events.GetPubSubInstance().Unsub(podAddChannel)
-
-			pod := tests.NewPodFixture(testNamespace, "pod-name", tests.BookstoreServiceAccountName, tests.PodLabels)
+			annCh := make(chan announcements.Announcement, 1)
+			pod := tests.NewPodTestFixture(testNamespace, "pod-name")
 			eventTypes := EventTypes{
 				Add:    announcements.PodAdded,
 				Update: announcements.PodUpdated,
 				Delete: announcements.PodDeleted,
 			}
-			handlers := GetKubernetesEventHandlers(testInformer, testProvider, shouldObserve, eventTypes)
+			handlers := GetKubernetesEventHandlers(testInformer, testProvider, annCh, shouldObserve, nil, eventTypes)
 			handlers.AddFunc(&pod)
-			an := <-podAddChannel
-			Expect(len(podAddChannel)).To(Equal(0))
+			Expect(len(annCh)).To(Equal(1))
+			announcement := <-annCh
 
-			// Pubsub msg
-			pubsubMsg, castOk := an.(events.PubSubMessage)
-			Expect(castOk).To(BeTrue())
-			Expect(pubsubMsg.AnnouncementType).To(Equal(announcements.PodAdded))
-			Expect(pubsubMsg.OldObj).To(BeNil())
-
-			// Cast New obj, expect v1.Pod
-			podObj, castOk := pubsubMsg.NewObj.(*v1.Pod)
-			Expect(castOk).To(BeTrue())
-			Expect(podObj.Name).To(Equal("pod-name"))
-			Expect(podObj.Namespace).To(Equal(testNamespace))
+			expected := announcements.Announcement{
+				Type:               announcements.PodAdded,
+				ReferencedObjectID: nil,
+			}
+			Expect(announcement).To(Equal(expected))
 		})
 
 		It("Should not add the event to the announcement channel", func() {
-			podAddChannel := events.GetPubSubInstance().Subscribe(announcements.PodAdded)
-			defer events.GetPubSubInstance().Unsub(podAddChannel)
-
+			annCh := make(chan announcements.Announcement, 1)
 			var pod corev1.Pod
 			pod.Namespace = "not-a-monitored-namespace"
-			handlers := GetKubernetesEventHandlers(testInformer, testProvider, shouldObserve, EventTypes{})
+			handlers := GetKubernetesEventHandlers(testInformer, testProvider, annCh, shouldObserve, nil, EventTypes{})
 			handlers.AddFunc(&pod)
-			Expect(len(podAddChannel)).To(Equal(0))
+			Expect(len(annCh)).To(Equal(0))
 		})
 	})
 
 	Context("create getNamespace", func() {
 		It("gets the namespace name", func() {
 			ns := uuid.New().String()
-			pod := tests.NewPodFixture(ns, uuid.New().String(), tests.BookstoreServiceAccountName, tests.PodLabels)
+			pod := tests.NewPodTestFixture(ns, uuid.New().String())
 			actual := getNamespace(&pod)
 			Expect(actual).To(Equal(ns))
 		})

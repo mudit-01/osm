@@ -8,14 +8,23 @@ import (
 	"github.com/openservicemesh/osm/pkg/constants"
 )
 
-func (wh *mutatingWebhook) isMetricsEnabled(namespace string) (enabled bool, err error) {
+func (wh *webhook) isMetricsEnabled(namespace string) (bool, error) {
 	ns := wh.kubeController.GetNamespace(namespace)
 	if ns == nil {
 		log.Error().Err(errNamespaceNotFound).Msgf("Error retrieving namespace %s", namespace)
 		return false, errNamespaceNotFound
 	}
 
-	metrics, ok := ns.Annotations[constants.MetricsAnnotation]
+	enabled, err := isAnnotatedForMetrics(ns.Annotations)
+	if err != nil {
+		return false, err
+	}
+
+	return enabled, nil
+}
+
+func isAnnotatedForMetrics(annotations map[string]string) (enabled bool, err error) {
+	metrics, ok := annotations[constants.MetricsAnnotation]
 	if !ok {
 		return false, nil
 	}
@@ -29,7 +38,7 @@ func (wh *mutatingWebhook) isMetricsEnabled(namespace string) (enabled bool, err
 		case "disabled", "no", "false":
 			enabled = false
 		default:
-			err = errors.Errorf("Invalid value specified for annotation %q: %s", constants.MetricsAnnotation, metrics)
+			err = errors.Errorf("Invalid annotion value specified for annotation %q: %s", constants.MetricsAnnotation, metrics)
 		}
 	}
 	return

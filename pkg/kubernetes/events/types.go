@@ -1,5 +1,3 @@
-// Package events implements the eventing framework to receive and relay kubernetes events, and a framework to
-// publish events to the Kubernetes API server.
 package events
 
 import (
@@ -42,9 +40,4 @@ type PubSub interface {
 
 	// Publish publishes the message to all subscribers that have subscribed to <message.AnnouncementType> topic
 	Publish(message PubSubMessage)
-
-	// Unsub unsubscribes and closes the channel on pubsub backend
-	// Note this is a necessary step to ensure a channel can be
-	// garbage collected when it is freed.
-	Unsub(unsubChan chan interface{})
 }

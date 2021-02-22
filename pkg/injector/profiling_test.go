@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadTimeout(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	expectedResults := map[string]bool{
 		"/mutate-pod-creation?timeout=30s":            true,
@@ -37,21 +37,19 @@ func TestReadTimeout(t *testing.T) {
 }
 
 func TestDeferredWebhookLogging(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	// Redirect zerolog output temporarily to trap the log message
 	logsave := log
 	var b bytes.Buffer
 	log = log.Output(&b)
-	success := false
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		timeout := time.Duration(30 * time.Second)
-
-		defer webhookTimeTrack(time.Now(), timeout, &success)
+		timeout, _ := time.ParseDuration("30s")
+		defer webhookTimeTrack(time.Now(), timeout)
 
 		time.Sleep(100 * time.Millisecond)
 	}()

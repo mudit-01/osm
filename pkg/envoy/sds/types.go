@@ -1,4 +1,3 @@
-// Package sds implements Envoy's Secret Discovery Service (SDS).
 package sds
 
 import (

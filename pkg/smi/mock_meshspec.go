@@ -8,10 +8,13 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	v1alpha2 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/access/v1alpha2"
+	v1alpha3 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/specs/v1alpha3"
+	v1alpha20 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/split/v1alpha2"
+
+	v1alpha1 "github.com/openservicemesh/osm/experimental/pkg/apis/policy/v1alpha1"
+	"github.com/openservicemesh/osm/pkg/announcements"
 	service "github.com/openservicemesh/osm/pkg/service"
-	v1alpha3 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/access/v1alpha3"
-	v1alpha4 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/specs/v1alpha4"
-	v1alpha2 "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/split/v1alpha2"
 )
 
 // MockMeshSpec is a mock of MeshSpec interface
@@ -37,25 +40,39 @@ func (m *MockMeshSpec) EXPECT() *MockMeshSpecMockRecorder {
 	return m.recorder
 }
 
-// GetTCPRoute mocks base method
-func (m *MockMeshSpec) GetTCPRoute(arg0 string) *v1alpha4.TCPRoute {
+// GetAnnouncementsChannel mocks base method
+func (m *MockMeshSpec) GetAnnouncementsChannel() <-chan announcements.Announcement {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTCPRoute", arg0)
-	ret0, _ := ret[0].(*v1alpha4.TCPRoute)
+	ret := m.ctrl.Call(m, "GetAnnouncementsChannel")
+	ret0, _ := ret[0].(<-chan announcements.Announcement)
 	return ret0
 }
 
-// GetTCPRoute indicates an expected call of GetTCPRoute
-func (mr *MockMeshSpecMockRecorder) GetTCPRoute(arg0 interface{}) *gomock.Call {
+// GetAnnouncementsChannel indicates an expected call of GetAnnouncementsChannel
+func (mr *MockMeshSpecMockRecorder) GetAnnouncementsChannel() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTCPRoute", reflect.TypeOf((*MockMeshSpec)(nil).GetTCPRoute), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAnnouncementsChannel", reflect.TypeOf((*MockMeshSpec)(nil).GetAnnouncementsChannel))
+}
+
+// GetBackpressurePolicy mocks base method
+func (m *MockMeshSpec) GetBackpressurePolicy(arg0 service.MeshService) *v1alpha1.Backpressure {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBackpressurePolicy", arg0)
+	ret0, _ := ret[0].(*v1alpha1.Backpressure)
+	return ret0
+}
+
+// GetBackpressurePolicy indicates an expected call of GetBackpressurePolicy
+func (mr *MockMeshSpecMockRecorder) GetBackpressurePolicy(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBackpressurePolicy", reflect.TypeOf((*MockMeshSpec)(nil).GetBackpressurePolicy), arg0)
 }
 
 // ListHTTPTrafficSpecs mocks base method
-func (m *MockMeshSpec) ListHTTPTrafficSpecs() []*v1alpha4.HTTPRouteGroup {
+func (m *MockMeshSpec) ListHTTPTrafficSpecs() []*v1alpha3.HTTPRouteGroup {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListHTTPTrafficSpecs")
-	ret0, _ := ret[0].([]*v1alpha4.HTTPRouteGroup)
+	ret0, _ := ret[0].([]*v1alpha3.HTTPRouteGroup)
 	return ret0
 }
 
@@ -80,10 +97,10 @@ func (mr *MockMeshSpecMockRecorder) ListServiceAccounts() *gomock.Call {
 }
 
 // ListTCPTrafficSpecs mocks base method
-func (m *MockMeshSpec) ListTCPTrafficSpecs() []*v1alpha4.TCPRoute {
+func (m *MockMeshSpec) ListTCPTrafficSpecs() []*v1alpha3.TCPRoute {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListTCPTrafficSpecs")
-	ret0, _ := ret[0].([]*v1alpha4.TCPRoute)
+	ret0, _ := ret[0].([]*v1alpha3.TCPRoute)
 	return ret0
 }
 
@@ -108,10 +125,10 @@ func (mr *MockMeshSpecMockRecorder) ListTrafficSplitServices() *gomock.Call {
 }
 
 // ListTrafficSplits mocks base method
-func (m *MockMeshSpec) ListTrafficSplits() []*v1alpha2.TrafficSplit {
+func (m *MockMeshSpec) ListTrafficSplits() []*v1alpha20.TrafficSplit {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListTrafficSplits")
-	ret0, _ := ret[0].([]*v1alpha2.TrafficSplit)
+	ret0, _ := ret[0].([]*v1alpha20.TrafficSplit)
 	return ret0
 }
 
@@ -122,10 +139,10 @@ func (mr *MockMeshSpecMockRecorder) ListTrafficSplits() *gomock.Call {
 }
 
 // ListTrafficTargets mocks base method
-func (m *MockMeshSpec) ListTrafficTargets() []*v1alpha3.TrafficTarget {
+func (m *MockMeshSpec) ListTrafficTargets() []*v1alpha2.TrafficTarget {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListTrafficTargets")
-	ret0, _ := ret[0].([]*v1alpha3.TrafficTarget)
+	ret0, _ := ret[0].([]*v1alpha2.TrafficTarget)
 	return ret0
 }
 

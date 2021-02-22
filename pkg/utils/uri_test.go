@@ -3,11 +3,11 @@ package utils
 import (
 	"testing"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetLastChunkOfSlashed(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	type getLastChunkOfSlashedTest struct {
 		input             string

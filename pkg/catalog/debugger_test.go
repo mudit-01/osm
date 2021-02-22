@@ -12,9 +12,8 @@ import (
 
 var _ = Describe("Test catalog proxy register/unregister", func() {
 	mc := newFakeMeshCatalog()
-	certCommonName := certificate.CommonName("foo")
-	certSerialNumber := certificate.SerialNumber("123456")
-	proxy := envoy.NewProxy(certCommonName, certSerialNumber, nil)
+	cn := certificate.CommonName("foo")
+	proxy := envoy.NewProxy(cn, nil)
 
 	Context("Test register/unregister proxies", func() {
 		It("no proxies expected, connected or disconnected", func() {
@@ -30,7 +29,7 @@ var _ = Describe("Test catalog proxy register/unregister", func() {
 
 		It("expect one proxy to connect", func() {
 			// mc.RegisterProxy(proxy)
-			mc.ExpectProxy(certCommonName)
+			mc.ExpectProxy(cn)
 
 			expectedProxies := mc.ListExpectedProxies()
 			Expect(len(expectedProxies)).To(Equal(1))
@@ -41,7 +40,7 @@ var _ = Describe("Test catalog proxy register/unregister", func() {
 			disconnectedProxies := mc.ListDisconnectedProxies()
 			Expect(len(disconnectedProxies)).To(Equal(0))
 
-			_, ok := expectedProxies[certCommonName]
+			_, ok := expectedProxies[cn]
 			Expect(ok).To(BeTrue())
 		})
 
@@ -57,7 +56,7 @@ var _ = Describe("Test catalog proxy register/unregister", func() {
 			disconnectedProxies := mc.ListDisconnectedProxies()
 			Expect(len(disconnectedProxies)).To(Equal(0))
 
-			_, ok := connectedProxies[certCommonName]
+			_, ok := connectedProxies[cn]
 			Expect(ok).To(BeTrue())
 		})
 
@@ -73,7 +72,7 @@ var _ = Describe("Test catalog proxy register/unregister", func() {
 			disconnectedProxies := mc.ListDisconnectedProxies()
 			Expect(len(disconnectedProxies)).To(Equal(1))
 
-			_, ok := disconnectedProxies[certCommonName]
+			_, ok := disconnectedProxies[cn]
 			Expect(ok).To(BeTrue())
 		})
 	})

@@ -85,7 +85,7 @@ func getHandlers() []handler {
 	}
 }
 
-func reset(w http.ResponseWriter, _ *http.Request) {
+func reset(w http.ResponseWriter, r *http.Request) {
 	atomic.StoreInt64(&booksBought, 0)
 	atomic.StoreInt64(&booksBoughtV1, 0)
 	atomic.StoreInt64(&booksBoughtV2, 0)
@@ -111,7 +111,7 @@ func main() {
 	// This is the bookbuyer.  When it tries to buy books from the bookstore - we expect it to see 200 responses.
 	for i := 0; i < numConnections; i++ {
 		wg.Add(1)
-		fmt.Printf("Starting bookbuyer connection #%d", i)
+		fmt.Printf("Backpressure: starting bookbuyer connection #%d", i)
 		go getBooksWrapper(&wg)
 	}
 

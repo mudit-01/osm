@@ -50,7 +50,7 @@ var _ = Describe("Test ADS response functions", func() {
 	mc := catalog.NewFakeMeshCatalog(kubeClient)
 
 	// Create a Pod
-	pod := tests.NewPodFixture(namespace, fmt.Sprintf("pod-0-%s", uuid.New()), tests.BookstoreServiceAccountName, tests.PodLabels)
+	pod := tests.NewPodTestFixture(namespace, fmt.Sprintf("pod-0-%s", uuid.New()))
 	pod.Labels[constants.EnvoyUniqueIDLabelName] = proxyUUID
 	_, err := kubeClient.CoreV1().Pods(namespace).Create(context.TODO(), &pod, metav1.CreateOptions{})
 	It("should have created a pod", func() {
@@ -70,16 +70,15 @@ var _ = Describe("Test ADS response functions", func() {
 		GinkgoT().Fatalf("Error creating new Bookstire Apex service: %s", err.Error())
 	}
 
-	certCommonName := certificate.CommonName(fmt.Sprintf("%s.%s.%s", proxyUUID, serviceAccountName, namespace))
-	certSerialNumber := certificate.SerialNumber("123456")
-	proxy := envoy.NewProxy(certCommonName, certSerialNumber, nil)
+	cn := certificate.CommonName(fmt.Sprintf("%s.%s.%s", proxyUUID, serviceAccountName, namespace))
+	proxy := envoy.NewProxy(cn, nil)
 
 	meshService := service.MeshService{
 		Namespace: "default",
 		Name:      serviceName,
 	}
 
-	Context("Test makeRequestForAllSecrets()", func() {
+	Context("Test getRequestedCertType()", func() {
 		It("returns service cert", func() {
 
 			actual := makeRequestForAllSecrets(proxy, mc)
@@ -108,9 +107,9 @@ var _ = Describe("Test ADS response functions", func() {
 	Context("Test sendAllResponses()", func() {
 
 		certManager := tresor.NewFakeCertManager(mockConfigurator)
-		certCommonName := certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New(), serviceAccountName, tests.Namespace))
+		cn := certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New(), serviceAccountName, tests.Namespace))
 		certDuration := 1 * time.Hour
-		certPEM, _ := certManager.IssueCertificate(certCommonName, certDuration)
+		certPEM, _ := certManager.IssueCertificate(cn, certDuration)
 		cert, _ := certificate.DecodePEMCertificate(certPEM.GetCertificateChain())
 		server, actualResponses := tests.NewFakeXDSServer(cert, nil, nil)
 
@@ -119,7 +118,6 @@ var _ = Describe("Test ADS response functions", func() {
 		mockConfigurator.EXPECT().IsTracingEnabled().Return(false).AnyTimes()
 		mockConfigurator.EXPECT().IsPermissiveTrafficPolicyMode().Return(false).AnyTimes()
 		mockConfigurator.EXPECT().GetServiceCertValidityPeriod().Return(certDuration).AnyTimes()
-		mockConfigurator.EXPECT().IsDebugServerEnabled().Return(true).AnyTimes()
 
 		It("returns Aggregated Discovery Service response", func() {
 			s := NewADSServer(mc, true, tests.Namespace, mockConfigurator, mockCertManager)

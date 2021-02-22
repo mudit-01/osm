@@ -1,4 +1,3 @@
-// Package constants defines the constants that are used by multiple other packages within OSM.
 package constants
 
 import "time"
@@ -32,7 +31,7 @@ const (
 	EnvoyOutboundListenerPortName = "proxy-outbound"
 
 	// EnvoyUID is the Envoy's User ID
-	EnvoyUID int64 = 1500
+	EnvoyUID int64 = 1337
 
 	// LocalhostIPAddress is the local host address.
 	LocalhostIPAddress = "127.0.0.1"
@@ -61,8 +60,8 @@ const (
 	// InjectorWebhookPort is the port on which the sidecar injection webhook listens
 	InjectorWebhookPort = 9090
 
-	// OSMHTTPServerPort is the port on which osm-controller and osm-injector serve HTTP requests for metrics, health probes etc.
-	OSMHTTPServerPort = 9091
+	// MetricsServerPort is the port on which OSM exposes its own metrics server
+	MetricsServerPort = 9091
 
 	//DebugPort is the port on which OSM exposes its debug server
 	DebugPort = 9092
@@ -126,7 +125,7 @@ const (
 	// DomainDelimiter is a delimiter used in representing domains
 	DomainDelimiter = "."
 
-	// EnvoyContainerName is the name used to identify the envoy sidecar container added on mesh-enabled deployments
+	// EnvoyContainerName is the name used to identify the envoy sidecard container added on mesh-enabled deployments
 	EnvoyContainerName = "envoy"
 
 	// InitContainerName is the name of the init container
@@ -154,7 +153,7 @@ const (
 	// PrometheusScrapeAnnotation is the annotation used to configure prometheus scraping
 	PrometheusScrapeAnnotation = "prometheus.io/scrape"
 
-	// PrometheusPortAnnotation is the annotation used to configure the port to scrape on
+	// PrometheusPortAnnotation is the anontation used to configure the port to scrape on
 	PrometheusPortAnnotation = "prometheus.io/port"
 
 	// PrometheusPathAnnotation is the annotation used to configure the path to scrape on

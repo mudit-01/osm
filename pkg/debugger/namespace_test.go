@@ -4,19 +4,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	tassert "github.com/stretchr/testify/assert"
+	gomock "github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/openservicemesh/osm/pkg/tests"
 )
 
 // Tests getMonitoredNamespaces through HTTP handler returns a the list of monitored namespaces
 func TestMonitoredNamespaceHandler(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 	mockCtrl := gomock.NewController(t)
 	mock := NewMockMeshCatalogDebugger(mockCtrl)
 
-	ds := DebugConfig{
+	ds := debugConfig{
 		meshCatalogDebugger: mock,
 	}
 	monitoredNamespacesHandler := ds.getMonitoredNamespacesHandler()

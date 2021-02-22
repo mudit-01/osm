@@ -3,9 +3,9 @@ package configurator
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/openservicemesh/osm/pkg/announcements"
 	"github.com/openservicemesh/osm/pkg/constants"
 )
 
@@ -116,17 +116,13 @@ func (c *Client) GetServiceCertValidityPeriod() time.Duration {
 	return validityDuration
 }
 
-// GetOutboundIPRangeExclusionList returns the list of IP ranges of the form x.x.x.x/y to exclude from outbound sidecar interception
-func (c *Client) GetOutboundIPRangeExclusionList() []string {
-	ipRangesStr := c.getConfigMap().OutboundIPRangeExclusionList
-	if ipRangesStr == "" {
-		return nil
+// Subscribe returns a channel subscribed to the announcement types passed by the given parameter
+func (c *Client) Subscribe(aTypes ...announcements.AnnouncementType) chan interface{} {
+	// Cast of array of T types, even when T types are equivalent, is forbidden
+	subTypes := []string{}
+	for _, v := range aTypes {
+		subTypes = append(subTypes, string(v))
 	}
 
-	exclusionList := strings.Split(ipRangesStr, ",")
-	for i := range exclusionList {
-		exclusionList[i] = strings.TrimSpace(exclusionList[i])
-	}
-
-	return exclusionList
+	return c.pSub.Sub(subTypes...)
 }

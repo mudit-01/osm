@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetEnv(t *testing.T) {
@@ -14,7 +14,7 @@ func TestGetEnv(t *testing.T) {
 		EnvVarDefaultValue = "default_value"
 	)
 
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	// make sure the variable is unset before starting the test
 	assert.NoError(os.Unsetenv(EnvVarName))

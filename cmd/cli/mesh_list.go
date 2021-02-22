@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	mapset "github.com/deckarep/golang-set"
 	"github.com/pkg/errors"
@@ -18,7 +17,7 @@ import (
 )
 
 const meshListDescription = `
-This command will list all the osm control planes running in a Kubernetes cluster, their namespaces, controller pods and joined namespaces.`
+This command will list all the osm control planes running in a Kubernetes cluster and their namespaces.`
 
 type meshListCmd struct {
 	out       io.Writer
@@ -63,33 +62,15 @@ func (l *meshListCmd) run() error {
 	}
 
 	w := newTabWriter(l.out)
-
-	fmt.Fprintln(w, "\nMESH NAME\tNAMESPACE\tCONTROLLER PODS")
+	fmt.Fprintln(w, "MESH NAME\tNAMESPACE\t")
 	for _, elem := range list.Items {
 		m := elem.ObjectMeta.Labels["meshName"]
 		ns := elem.ObjectMeta.Namespace
-		x := getNamespacePods(l.clientSet, m, ns)
-		fmt.Fprintf(w, "%s\t%s\t%s\n", m, ns, strings.Join(x["Pods"], ","))
+		fmt.Fprintf(w, "%s\t%s\t\n", m, ns)
 	}
 	_ = w.Flush()
 
 	return nil
-}
-
-// getNamespacePods returns a map of controller pods
-func getNamespacePods(clientSet kubernetes.Interface, m string, ns string) map[string][]string {
-	x := make(map[string][]string)
-
-	labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"app": constants.OSMControllerName}}
-	listOptions := metav1.ListOptions{
-		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
-	}
-	pods, _ := clientSet.CoreV1().Pods(ns).List(context.TODO(), listOptions)
-	for pno := 0; pno < len(pods.Items); pno++ {
-		x["Pods"] = append(x["Pods"], pods.Items[pno].GetName())
-	}
-
-	return x
 }
 
 // getControllerDeployments returns a list of Deployments corresponding to osm-controller

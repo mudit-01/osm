@@ -9,15 +9,13 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	. "github.com/openservicemesh/osm/tests/framework"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment server",
 	OSMDescribeInfo{
-		Tier:   1,
-		Bucket: 1,
+		tier:   1,
+		bucket: 1,
 	},
 	func() {
 		Context("DeploymentsClientServer", func() {
@@ -39,64 +37,64 @@ var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment 
 
 			It("Tests HTTP traffic from multiple client deployments to a server deployment", func() {
 				// Install OSM
-				Expect(Td.InstallOSM(Td.GetOSMInstallOpts())).To(Succeed())
+				Expect(td.InstallOSM(td.GetOSMInstallOpts())).To(Succeed())
 
 				// Server NS
-				Expect(Td.CreateNs(destApp, nil)).To(Succeed())
-				Expect(Td.AddNsToMesh(true, destApp)).To(Succeed())
+				Expect(td.CreateNs(destApp, nil)).To(Succeed())
+				Expect(td.AddNsToMesh(true, destApp)).To(Succeed())
 
 				// Client Applications
 				for _, srcClient := range sourceNamespaces {
-					Expect(Td.CreateNs(srcClient, nil)).To(Succeed())
-					Expect(Td.AddNsToMesh(true, srcClient)).To(Succeed())
+					Expect(td.CreateNs(srcClient, nil)).To(Succeed())
+					Expect(td.AddNsToMesh(true, srcClient)).To(Succeed())
 				}
 
 				// Use a deployment with multiple replicaset at serverside
-				svcAccDef, deploymentDef, svcDef := Td.SimpleDeploymentApp(
+				svcAccDef, deploymentDef, svcDef := td.SimpleDeploymentApp(
 					SimpleDeploymentAppDef{
-						Name:         "server",
-						Namespace:    destApp,
-						ReplicaCount: int32(replicaSetPerService),
-						Image:        "kennethreitz/httpbin",
-						Ports:        []int{80},
+						name:         "server",
+						namespace:    destApp,
+						replicaCount: int32(replicaSetPerService),
+						image:        "kennethreitz/httpbin",
+						ports:        []int{80},
 					})
 
-				_, err := Td.CreateServiceAccount(destApp, &svcAccDef)
+				_, err := td.CreateServiceAccount(destApp, &svcAccDef)
 				Expect(err).NotTo(HaveOccurred())
-				_, err = Td.CreateDeployment(destApp, deploymentDef)
+				_, err = td.CreateDeployment(destApp, deploymentDef)
 				Expect(err).NotTo(HaveOccurred())
-				_, err = Td.CreateService(destApp, svcDef)
+				_, err = td.CreateService(destApp, svcDef)
 				Expect(err).NotTo(HaveOccurred())
 
 				wg.Add(1)
 				go func(wg *sync.WaitGroup, srcClient string) {
 					defer wg.Done()
-					Expect(Td.WaitForPodsRunningReady(destApp, 200*time.Second, replicaSetPerService)).To(Succeed())
+					Expect(td.WaitForPodsRunningReady(destApp, 200*time.Second, replicaSetPerService)).To(Succeed())
 				}(&wg, destApp)
 
 				// Create all client deployments, also with replicaset
 				for _, srcClient := range sourceNamespaces {
-					svcAccDef, deploymentDef, svcDef = Td.SimpleDeploymentApp(
+					svcAccDef, deploymentDef, svcDef = td.SimpleDeploymentApp(
 						SimpleDeploymentAppDef{
-							Name:         srcClient,
-							Namespace:    srcClient,
-							ReplicaCount: int32(replicaSetPerService),
-							Command:      []string{"/bin/bash", "-c", "--"},
-							Args:         []string{"while true; do sleep 30; done;"},
-							Image:        "songrgg/alpine-debug",
-							Ports:        []int{80}, // Can't deploy services with empty/no ports
+							name:         srcClient,
+							namespace:    srcClient,
+							replicaCount: int32(replicaSetPerService),
+							command:      []string{"/bin/bash", "-c", "--"},
+							args:         []string{"while true; do sleep 30; done;"},
+							image:        "songrgg/alpine-debug",
+							ports:        []int{80}, // Can't deploy services with empty/no ports
 						})
-					_, err = Td.CreateServiceAccount(srcClient, &svcAccDef)
+					_, err = td.CreateServiceAccount(srcClient, &svcAccDef)
 					Expect(err).NotTo(HaveOccurred())
-					_, err = Td.CreateDeployment(srcClient, deploymentDef)
+					_, err = td.CreateDeployment(srcClient, deploymentDef)
 					Expect(err).NotTo(HaveOccurred())
-					_, err = Td.CreateService(srcClient, svcDef)
+					_, err = td.CreateService(srcClient, svcDef)
 					Expect(err).NotTo(HaveOccurred())
 
 					wg.Add(1)
 					go func(wg *sync.WaitGroup, srcClient string) {
 						defer wg.Done()
-						Expect(Td.WaitForPodsRunningReady(srcClient, 200*time.Second, replicaSetPerService)).To(Succeed())
+						Expect(td.WaitForPodsRunningReady(srcClient, 200*time.Second, replicaSetPerService)).To(Succeed())
 					}(&wg, srcClient)
 				}
 				wg.Wait()
@@ -104,7 +102,7 @@ var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment 
 				// Create traffic rules
 				// Deploy allow rules (10x)clients -> server
 				for _, srcClient := range sourceNamespaces {
-					httpRG, trafficTarget := Td.CreateSimpleAllowPolicy(
+					httpRG, trafficTarget := td.CreateSimpleAllowPolicy(
 						SimpleAllowPolicy{
 							RouteGroupName:    srcClient,
 							TrafficTargetName: srcClient,
@@ -117,9 +115,9 @@ var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment 
 						})
 
 					// Configs have to be put into a monitored NS, and osm-system can't be by cli
-					_, err = Td.CreateHTTPRouteGroup(srcClient, httpRG)
+					_, err = td.CreateHTTPRouteGroup(srcClient, httpRG)
 					Expect(err).NotTo(HaveOccurred())
-					_, err = Td.CreateTrafficTarget(srcClient, trafficTarget)
+					_, err = td.CreateTrafficTarget(srcClient, trafficTarget)
 					Expect(err).NotTo(HaveOccurred())
 				}
 
@@ -128,7 +126,7 @@ var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment 
 					Sources: []HTTPRequestDef{},
 				}
 				for _, ns := range sourceNamespaces {
-					pods, err := Td.Client.CoreV1().Pods(ns).List(context.Background(), metav1.ListOptions{})
+					pods, err := td.client.CoreV1().Pods(ns).List(context.Background(), metav1.ListOptions{})
 					Expect(err).To(BeNil())
 
 					for _, pod := range pods.Items {
@@ -143,12 +141,12 @@ var _ = OSMDescribe("Test HTTP traffic from N deployment client -> 1 deployment 
 				}
 
 				var results HTTPMultipleResults
-				success := Td.WaitForRepeatedSuccess(func() bool {
+				success := td.WaitForRepeatedSuccess(func() bool {
 					// Issue all calls, get results
-					results = Td.MultipleHTTPRequest(&requests)
+					results = td.MultipleHTTPRequest(&requests)
 
 					// Care, depending on variables there could be a lot of results
-					Td.PrettyPrintHTTPResults(&results)
+					td.PrettyPrintHTTPResults(&results)
 
 					// Verify success conditions
 					for _, ns := range results {

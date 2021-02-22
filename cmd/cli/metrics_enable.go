@@ -62,7 +62,7 @@ func newMetricsEnable(out io.Writer) *cobra.Command {
 }
 
 func (cmd *metricsEnableCmd) run() error {
-	// Add metrics annotation on namespaces
+	// Add metrics annotation on namepaces
 	for _, ns := range cmd.namespaces {
 		ns = strings.TrimSpace(ns)
 

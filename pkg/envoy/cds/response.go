@@ -1,7 +1,8 @@
 package cds
 
 import (
-	mapset "github.com/deckarep/golang-set"
+	"fmt"
+
 	xds_cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	xds_discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/golang/protobuf/ptypes"
@@ -11,98 +12,100 @@ import (
 	"github.com/openservicemesh/osm/pkg/configurator"
 	"github.com/openservicemesh/osm/pkg/envoy"
 	"github.com/openservicemesh/osm/pkg/featureflags"
+	"github.com/openservicemesh/osm/pkg/service"
 )
 
 // NewResponse creates a new Cluster Discovery Response.
-func NewResponse(meshCatalog catalog.MeshCataloger, proxy *envoy.Proxy, _ *xds_discovery.DiscoveryRequest, cfg configurator.Configurator, _ certificate.Manager) (*xds_discovery.DiscoveryResponse, error) {
-	svcList, err := meshCatalog.GetServicesFromEnvoyCertificate(proxy.GetCertificateCommonName())
+func NewResponse(catalog catalog.MeshCataloger, proxy *envoy.Proxy, _ *xds_discovery.DiscoveryRequest, cfg configurator.Configurator, _ certificate.Manager) (*xds_discovery.DiscoveryResponse, error) {
+	svcList, err := catalog.GetServicesFromEnvoyCertificate(proxy.GetCommonName())
 	if err != nil {
-		log.Error().Err(err).Msgf("Error looking up MeshService for Envoy with SerialNumber=%s on Pod with UID=%s", proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
+		log.Error().Err(err).Msgf("Error looking up MeshService for Envoy with CN=%q", proxy.GetCommonName())
 		return nil, err
 	}
 	// Github Issue #1575
 	proxyServiceName := svcList[0]
 
-	var clusters []*xds_cluster.Cluster
+	resp := &xds_discovery.DiscoveryResponse{
+		TypeUrl: string(envoy.TypeCDS),
+	}
+	// The clusters have to be unique, so use a map to prevent duplicates. Keys correspond to the cluster name.
+	clusterFactories := make(map[string]*xds_cluster.Cluster)
 
-	proxyIdentity, err := catalog.GetServiceAccountFromProxyCertificate(proxy.GetCertificateCommonName())
+	outboundServices, err := catalog.ListAllowedOutboundServices(proxyServiceName)
 	if err != nil {
-		log.Error().Err(err).Msgf("Error looking up proxy identity for proxy with SerialNumber=%s on Pod with UID=%s",
-			proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
+		log.Error().Err(err).Msgf("Error listing outbound services for proxy %q", proxyServiceName)
 		return nil, err
 	}
 
 	// Build remote clusters based on allowed outbound services
-	for _, dstService := range meshCatalog.ListAllowedOutboundServicesForIdentity(proxyIdentity) {
-		cluster, err := getUpstreamServiceCluster(dstService, proxyServiceName, cfg)
+	for _, dstService := range outboundServices {
+		if _, found := clusterFactories[dstService.String()]; found {
+			// Guard against duplicates
+			continue
+		}
+
+		remoteCluster, err := getUpstreamServiceCluster(dstService, proxyServiceName, cfg)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to construct service cluster for service %s for proxy %s", dstService.Name, proxyServiceName)
+			log.Error().Err(err).Msgf("Failed to construct service cluster for proxy %s", proxyServiceName)
 			return nil, err
 		}
 
-		clusters = append(clusters, cluster)
+		if featureflags.IsBackpressureEnabled() {
+			enableBackpressure(catalog, remoteCluster, dstService)
+		}
+
+		clusterFactories[remoteCluster.Name] = remoteCluster
 	}
 
 	// Create a local cluster for the service.
 	// The local cluster will be used for incoming traffic.
-	localClusterName := envoy.GetLocalClusterNameForService(proxyServiceName)
-	var localCluster *xds_cluster.Cluster
-	if proxyServiceName.IsSyntheticService() {
-		localCluster = getSyntheticCluster(localClusterName)
-	} else {
-		localCluster, err = getLocalServiceCluster(meshCatalog, proxyServiceName, localClusterName)
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to get local cluster config for proxy %s", proxyServiceName)
-			return nil, err
-		}
+	localClusterName := getLocalClusterName(proxyServiceName)
+	localCluster, err := getLocalServiceCluster(catalog, proxyServiceName, localClusterName)
+	if err != nil {
+		log.Error().Err(err).Msgf("Failed to get local cluster config for proxy %s", proxyServiceName)
+		return nil, err
 	}
-	clusters = append(clusters, localCluster)
+	clusterFactories[localCluster.Name] = localCluster
 
-	if featureflags.IsRoutesV2Enabled() {
-		// if this service is associated with a trafficsplit service, add a local cluster for the apex service
-		// Needs to be updated with #2134 - handling multiple services per pod
-		for _, splitService := range meshCatalog.GetApexServicesForBackend(proxyServiceName) {
-			lcn := envoy.GetLocalClusterNameForService(splitService)
-			lc := getSyntheticCluster(lcn)
-			clusters = append(clusters, lc)
-		}
-	}
-
-	// Add an outbound passthrough cluster for egress
 	if cfg.IsEgressEnabled() {
-		clusters = append(clusters, getOutboundPassthroughCluster())
+		// Add a pass-through cluster for egress
+		passthroughCluster := getOutboundPassthroughCluster()
+		clusterFactories[passthroughCluster.Name] = passthroughCluster
 	}
 
-	// Add an inbound prometheus cluster (from Prometheus to localhost)
-	if cfg.IsPrometheusScrapingEnabled() {
-		clusters = append(clusters, getPrometheusCluster())
-	}
-
-	// Add an outbound tracing cluster (from localhost to tracing sink)
-	if cfg.IsTracingEnabled() {
-		clusters = append(clusters, getTracingCluster(cfg))
-	}
-
-	resp := &xds_discovery.DiscoveryResponse{
-		TypeUrl: string(envoy.TypeCDS),
-	}
-
-	alreadyAdded := mapset.NewSet()
-	for _, cluster := range clusters {
-		if alreadyAdded.Contains(cluster.Name) {
-			log.Error().Msgf("Found duplicate clusters with name %s; Duplicate will not be sent to Envoy with XDS Certificate SerialNumber=%s on Pod with UID=%s",
-				cluster.Name, proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
-			continue
-		}
-		alreadyAdded.Add(cluster.Name)
+	for _, cluster := range clusterFactories {
+		log.Debug().Msgf("Proxy service %s constructed ClusterConfiguration: %+v ", proxyServiceName, cluster)
 		marshalledClusters, err := ptypes.MarshalAny(cluster)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to marshal cluster %s for Envoy with XDS Certificate SerialNumber=%s on Pod with UID=%s",
-				cluster.Name, proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
+			log.Error().Err(err).Msgf("Failed to marshal cluster for proxy %s", proxy.GetCommonName())
 			return nil, err
 		}
 		resp.Resources = append(resp.Resources, marshalledClusters)
 	}
 
+	if cfg.IsPrometheusScrapingEnabled() {
+		prometheusCluster := getPrometheusCluster()
+		marshalledCluster, err := ptypes.MarshalAny(&prometheusCluster)
+		if err != nil {
+			log.Error().Err(err).Msgf("Error marshaling Prometheus cluster for proxy with CN=%s", proxy.GetCommonName())
+			return nil, err
+		}
+		resp.Resources = append(resp.Resources, marshalledCluster)
+	}
+
+	if cfg.IsTracingEnabled() {
+		tracingCluster := getTracingCluster(cfg)
+		marshalledCluster, err := ptypes.MarshalAny(&tracingCluster)
+		if err != nil {
+			log.Error().Err(err).Msgf("Error marshaling tracing cluster for proxy with CN=%s", proxy.GetCommonName())
+			return nil, err
+		}
+		resp.Resources = append(resp.Resources, marshalledCluster)
+	}
+
 	return resp, nil
+}
+
+func getLocalClusterName(proxyServiceName service.MeshService) string {
+	return fmt.Sprintf("%s%s", proxyServiceName, envoy.LocalClusterSuffix)
 }
