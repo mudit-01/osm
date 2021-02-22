@@ -1,12 +1,11 @@
+// Package configurator implements the Configurator interface that provides APIs to retrieve OSM control plane configurations.
 package configurator
 
 import (
 	"time"
 
-	"github.com/cskr/pubsub"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/openservicemesh/osm/pkg/announcements"
 	"github.com/openservicemesh/osm/pkg/logger"
 )
 
@@ -18,11 +17,9 @@ var (
 type Client struct {
 	osmNamespace     string
 	osmConfigMapName string
-	announcements    chan announcements.Announcement
 	informer         cache.SharedIndexInformer
 	cache            cache.Store
 	cacheSynced      chan interface{}
-	pSub             *pubsub.PubSub
 }
 
 // Configurator is the controller interface for K8s namespaces
@@ -32,9 +29,6 @@ type Configurator interface {
 
 	// GetConfigMap returns the ConfigMap in pretty JSON (human readable)
 	GetConfigMap() ([]byte, error)
-
-	// Subscribe returns a channel subscribed to the announcement types passed by parameter
-	Subscribe(...announcements.AnnouncementType) chan interface{}
 
 	// IsPermissiveTrafficPolicyMode determines whether we are in "allow-all" mode or SMI policy (block by default) mode
 	IsPermissiveTrafficPolicyMode() bool
@@ -68,4 +62,7 @@ type Configurator interface {
 
 	// GetServiceCertValidityPeriod returns the validity duration for service certificates
 	GetServiceCertValidityPeriod() time.Duration
+
+	// GetOutboundIPRangeExclusionList returns the list of IP ranges of the form x.x.x.x/y to exclude from outbound sidecar interception
+	GetOutboundIPRangeExclusionList() []string
 }

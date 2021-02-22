@@ -1,75 +1,148 @@
 # Default values for osm.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
+
 OpenServiceMesh:
+  # -- `osm-controller` replicas
   replicaCount: 1
   image:
+    # -- `osm-controller` image registry
     registry: openservicemesh
+    # -- `osm-controller` pod PullPolicy
     pullPolicy: IfNotPresent
-    tag: v0.5.0
+    # -- `osm-controller` image tag
+    tag: v0.7.0
+  # -- `osm-controller` image pull secret
   imagePullSecrets: []
-  sidecarImage: envoyproxy/envoy-alpine:v1.15.0
+  # -- Envoy sidecar image
+  sidecarImage: envoyproxy/envoy-alpine:v1.17.0
+  osmcontroller:
+    resource:
+      limits:
+        cpu: "1.5"
+        memory: "512M"
+      requests:
+        cpu: "0.5"
+        memory: "32M"
   prometheus:
+    # -- Prometheus port
     port: 7070
     retention:
+      # -- Prometheus retention time
       time: 15d
+  # -- The Certificate manager type: `tresor`, `vault` or `cert-manager`
   certificateManager: tresor
   vault:
+    # --  Hashicorp Vault host/service - where Vault is installed
     host:
+    # -- protocol to use to connect to Vault
     protocol: http
+    # -- token that should be used to connect to Vault
     token:
+    # -- Vault role to be used by Open Service Mesh
     role: openservicemesh
-  connectVault: true
   certmanager:
+    # --  cert-manager issuer namecert-manager issuer name
     issuerName: osm-ca
+    # -- cert-manager issuer kind
     issuerKind: Issuer
+    # -- cert-manager issuer group
     issuerGroup: cert-manager
+  # -- Sets the service certificatevalidity duration
   serviceCertValidityDuration: 24h
+  # -- The Kubernetes secret to store `ca.crt`
   caBundleSecretName: osm-ca-bundle
   grafana:
+    # -- Grafana port
     port: 3000
-
+    # -- Enable Remote Rendering in Grafana
+    enableRemoteRendering: false
+  # -- Enable the debug HTTP server
   enableDebugServer: false
+  # -- Enable permissive traffic policy mode
   enablePermissiveTrafficPolicy: false
-  enableBackpressureExperimental: false
+   # -- Enable experimental routes feature
+  enableRoutesV2Experimental: false
+  # -- Enable egress in the mesh
   enableEgress: false
+  # -- Deploy Prometheus
   deployPrometheus: false
+  # -- Enable Prometheus metrics scraping on sidecar proxies
   enablePrometheusScraping: true
+  # -- Deploy Grafana
   deployGrafana: false
+  # -- Enable Fluent Bit sidecar deployment
   enableFluentbit: false
-  fluentBitImage:
+  fluentBit:
+    # -- Fluent Bit sidecar container name
     name: fluentbit-logger
+    # -- Registry for Fluent Bit sidecar container
     registry: fluent
-    tag: 1.5
+    # -- Fluent Bit sidecar image tag
+    tag: 1.6.4
+    # -- PullPolicy for Fluent Bit sidecar container
     pullPolicy: IfNotPresent
+    # -- Log level for Fluent Bit
+    logLevel: error
+    # -- Fluent Bit output plugin
+    outputPlugin: stdout
+    # -- WorkspaceId for Fluent Bit output plugin to Log Analytics
+    workspaceId: ""
+    # -- Primary Key for Fluent Bit output plugin to Log Analytics
+    primaryKey: ""
+    # -- Enable proxy support toggle for Fluent Bit
+    enableProxySupport: false
+    # -- Optional HTTP proxy endpoint for Fluent Bit
+    httpProxy: ""
+    # -- Optional HTTPS proxy endpoint for Fluent Bit
+    httpsProxy: ""
+  # -- Name for the new control plane instance
   meshName: osm
+  # -- Enables HTTPS ingress on the mesh
   useHTTPSIngress: false
+  # -- Envoy log level is used to specify the level of logs collected from envoy
   envoyLogLevel: error
-  controllerLogLevel: trace
+  # -- Controller log verbosity
+  controllerLogLevel: info
+  # -- Enforce only deploying one mesh in the cluster
   enforceSingleMesh: false
-  customLogAnalyticsWorkspace: true
-  fluentbitOutput: stdout
+  # -- Validating- and MutatingWebhookConfiguration name
   webhookConfigNamePrefix: osm-webhook
 
-  # Set deployJaeger to true to deploy a Jaeger cluster in the
-  # namespace where OSM resides.
-  deployJaeger: true
+  # -- Optional parameter. If not specified, the release namespace is used to deploy the osm components.
+  osmNamespace: ""
+
+  # -- Deploy Jaeger in the OSM namespace
+  deployJaeger: false
 
   # The following section configures a destination where to send
   # tracing data. Current implementation supports only Zipkin format
   # backends (https://github.com/openservicemesh/osm/issues/1596)
   tracing:
 
-    ## Toggles Envoy's tracing functionality on/off
-    ## for all proxies in the mesh.
-    enable: true
+    # -- Toggles Envoy's tracing functionality on/off for all sidecar proxies in the cluster
+    enable: false
 
-    # Tracing destination cluster
+    # -- Tracing destination cluster (must contain the namespace)
     address: "jaeger.osm-system.svc.cluster.local"
 
-    # Destination port for the listener
+    # -- Destination port for the listener
     port: 9411
 
-    # Destination's API or collector endpoint where the spans will
-    # be sent to
+    # -- Destination's API or collector endpoint where the spans will be sent to
     endpoint: "/api/v2/spans"
+
+  # -- Optional parameter to specify a global list of IP ranges to exclude from outbound traffic interception by the sidecar proxy.
+  # If specified, must be a list of IP ranges of the form a.b.c.d/x.
+  outboundIPRangeExclusionList: []
+
+  # -- Sidecar injector configuration
+  injector:
+    replicaCount: 1
+    resource:
+      limits:
+        cpu: "0.5"
+        memory: "32M"
+      requests:
+        cpu: "0.3"
+        memory: "32M"

@@ -41,7 +41,7 @@ Multiple control plane installations can exist within a cluster. Each
 control plane is given a cluster-wide unqiue identifier called mesh name.
 A mesh name can be passed in via the --mesh-name flag. By default, the
 mesh-name name will be set to "osm." The mesh name must conform to same
-guidlines as a valid Kubernetes label value. Must be 63 characters or
+guidelines as a valid Kubernetes label value. Must be 63 characters or
 less and must be empty or begin and end with an alphanumeric character
 ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and
 alphanumerics between.
@@ -54,33 +54,33 @@ well as for adding a Kubernetes Namespace to the list of Namespaces a control
 plane should watch for sidecar injection of Envoy proxies.
 `
 const (
-	defaultCertificateManager             = "tresor"
-	defaultCertManagerIssuerGroup         = "cert-manager.io"
-	defaultCertManagerIssuerKind          = "Issuer"
-	defaultCertManagerIssuerName          = "osm-ca"
-	defaultChartPath                      = ""
-	defaultContainerRegistry              = "openservicemesh"
-	defaultContainerRegistrySecret        = ""
-	defaultMeshName                       = "osm"
-	defaultOsmImagePullPolicy             = "IfNotPresent"
-	defaultOsmImageTag                    = "v0.5.0"
-	defaultPrometheusRetentionTime        = constants.PrometheusDefaultRetentionTime
-	defaultVaultHost                      = ""
-	defaultVaultProtocol                  = "http"
-	defaultVaultToken                     = ""
-	defaultVaultRole                      = "openservicemesh"
-	defaultEnvoyLogLevel                  = "error"
-	defaultServiceCertValidityDuration    = "24h"
-	defaultEnableDebugServer              = false
-	defaultEnableEgress                   = false
-	defaultEnablePermissiveTrafficPolicy  = false
-	defaultEnableBackpressureExperimental = false
-	defaultDeployPrometheus               = false
-	defaultEnablePrometheusScraping       = true
-	defaultDeployGrafana                  = false
-	defaultEnableFluentbit                = false
-	defaultDeployJaeger                   = true
-	defaultEnforceSingleMesh              = false
+	defaultCertificateManager            = "tresor"
+	defaultCertManagerIssuerGroup        = "cert-manager.io"
+	defaultCertManagerIssuerKind         = "Issuer"
+	defaultCertManagerIssuerName         = "osm-ca"
+	defaultChartPath                     = ""
+	defaultContainerRegistry             = "openservicemesh"
+	defaultContainerRegistrySecret       = ""
+	defaultMeshName                      = "osm"
+	defaultOsmImagePullPolicy            = "IfNotPresent"
+	defaultOsmImageTag                   = "v0.7.0"
+	defaultPrometheusRetentionTime       = constants.PrometheusDefaultRetentionTime
+	defaultVaultHost                     = ""
+	defaultVaultProtocol                 = "http"
+	defaultVaultToken                    = ""
+	defaultVaultRole                     = "openservicemesh"
+	defaultEnvoyLogLevel                 = "error"
+	defaultServiceCertValidityDuration   = "24h"
+	defaultEnableDebugServer             = false
+	defaultEnableEgress                  = false
+	defaultEnablePermissiveTrafficPolicy = false
+	defaultEnableRoutesV2Experimental    = false
+	defaultDeployPrometheus              = false
+	defaultEnablePrometheusScraping      = true
+	defaultDeployGrafana                 = false
+	defaultEnableFluentbit               = false
+	defaultDeployJaeger                  = false
+	defaultEnforceSingleMesh             = false
 )
 
 // chartTGZSource is a base64-encoded, gzipped tarball of the default Helm chart.
@@ -112,10 +112,11 @@ type installCmd struct {
 	enablePermissiveTrafficPolicy bool
 	clientSet                     kubernetes.Interface
 	chartRequested                *chart.Chart
+	setOptions                    []string
 
-	// This is an experimental flag, which will eventually
-	// become part of SMI Spec.
-	enableBackpressureExperimental bool
+	// This is an experimental flag, which results in using
+	// 	the experimental routes v2 feature
+	enableRoutesV2Experimental bool
 
 	// Toggle to enable/disable Prometheus installation
 	deployPrometheus bool
@@ -179,7 +180,7 @@ func newInstallCmd(config *helm.Configuration, out io.Writer) *cobra.Command {
 	f.BoolVar(&inst.enableDebugServer, "enable-debug-server", defaultEnableDebugServer, "Enable the debug HTTP server")
 	f.BoolVar(&inst.enablePermissiveTrafficPolicy, "enable-permissive-traffic-policy", defaultEnablePermissiveTrafficPolicy, "Enable permissive traffic policy mode")
 	f.BoolVar(&inst.enableEgress, "enable-egress", defaultEnableEgress, "Enable egress in the mesh")
-	f.BoolVar(&inst.enableBackpressureExperimental, "enable-backpressure-experimental", defaultEnableBackpressureExperimental, "Enable experimental backpressure feature")
+	f.BoolVar(&inst.enableRoutesV2Experimental, "enable-routes-v2-experimental", defaultEnableRoutesV2Experimental, "Enable experimental routes v2 feature")
 	f.BoolVar(&inst.deployPrometheus, "deploy-prometheus", defaultDeployPrometheus, "Install and deploy Prometheus")
 	f.BoolVar(&inst.enablePrometheusScraping, "enable-prometheus-scraping", defaultEnablePrometheusScraping, "Enable Prometheus metrics scraping on sidecar proxies")
 	f.BoolVar(&inst.deployGrafana, "deploy-grafana", defaultDeployGrafana, "Install and deploy Grafana")
@@ -189,6 +190,7 @@ func newInstallCmd(config *helm.Configuration, out io.Writer) *cobra.Command {
 	f.StringVar(&inst.envoyLogLevel, "envoy-log-level", defaultEnvoyLogLevel, "Envoy log level is used to specify the level of logs collected from envoy and needs to be one of these (trace, debug, info, warning, warn, error, critical, off)")
 	f.BoolVar(&inst.enforceSingleMesh, "enforce-single-mesh", defaultEnforceSingleMesh, "Enforce only deploying one mesh in the cluster")
 	f.DurationVar(&inst.timeout, "timeout", 5*time.Minute, "Time to wait for installation and resources in a ready state, zero means no timeout")
+	f.StringArrayVar(&inst.setOptions, "set", nil, "Set arbitrary chart values not settable by another flag (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 
 	return cmd
 }
@@ -234,6 +236,14 @@ func (i *installCmd) loadOSMChart() error {
 
 func (i *installCmd) resolveValues() (map[string]interface{}, error) {
 	finalValues := map[string]interface{}{}
+
+	for _, val := range i.setOptions {
+		// parses Helm strvals line and merges into a map for the final overrides for values.yaml
+		if err := strvals.ParseInto(val, finalValues); err != nil {
+			return nil, errors.Wrap(err, "invalid format for --set")
+		}
+	}
+
 	valuesConfig := []string{
 		fmt.Sprintf("OpenServiceMesh.image.registry=%s", i.containerRegistry),
 		fmt.Sprintf("OpenServiceMesh.image.tag=%s", i.osmImageTag),
@@ -250,7 +260,7 @@ func (i *installCmd) resolveValues() (map[string]interface{}, error) {
 		fmt.Sprintf("OpenServiceMesh.prometheus.retention.time=%s", i.prometheusRetentionTime),
 		fmt.Sprintf("OpenServiceMesh.enableDebugServer=%t", i.enableDebugServer),
 		fmt.Sprintf("OpenServiceMesh.enablePermissiveTrafficPolicy=%t", i.enablePermissiveTrafficPolicy),
-		fmt.Sprintf("OpenServiceMesh.enableBackpressureExperimental=%t", i.enableBackpressureExperimental),
+		fmt.Sprintf("OpenServiceMesh.enableRoutesV2Experimental=%t", i.enableRoutesV2Experimental),
 		fmt.Sprintf("OpenServiceMesh.deployPrometheus=%t", i.deployPrometheus),
 		fmt.Sprintf("OpenServiceMesh.enablePrometheusScraping=%t", i.enablePrometheusScraping),
 		fmt.Sprintf("OpenServiceMesh.deployGrafana=%t", i.deployGrafana),
@@ -272,6 +282,7 @@ func (i *installCmd) resolveValues() (map[string]interface{}, error) {
 			return nil, err
 		}
 	}
+
 	return finalValues, nil
 }
 
@@ -304,11 +315,11 @@ func (i *installCmd) validateOptions() error {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
 	}
-	list, err := deploymentsClient.List(context.TODO(), listOptions)
+	osmControllerDeployments, err := deploymentsClient.List(context.TODO(), listOptions)
 	if err != nil {
 		return err
 	}
-	if len(list.Items) != 0 {
+	if len(osmControllerDeployments.Items) != 0 {
 		return errMeshAlreadyExists(i.meshName)
 	}
 
@@ -318,8 +329,8 @@ func (i *installCmd) validateOptions() error {
 	listOptions = metav1.ListOptions{
 		LabelSelector: labels.Set(labelSelector.MatchLabels).String(),
 	}
-	list, err = deploymentsClient.List(context.TODO(), listOptions)
-	if len(list.Items) != 0 {
+	osmControllerDeployments, err = deploymentsClient.List(context.TODO(), listOptions)
+	if osmControllerDeployments != nil && len(osmControllerDeployments.Items) > 0 {
 		return errNamespaceAlreadyHasController(settings.Namespace())
 	} else if err != nil {
 		return fmt.Errorf("Error ensuring no osm-controller running in namespace %s:%s", settings.Namespace(), err)
@@ -335,13 +346,13 @@ func (i *installCmd) validateOptions() error {
 		return err
 	}
 
-	list, err = getControllerDeployments(i.clientSet)
+	osmControllerDeployments, err = getControllerDeployments(i.clientSet)
 	if err != nil {
 		return err
 	}
 
 	// Check if single mesh cluster is already specified
-	for _, deployment := range list.Items {
+	for _, deployment := range osmControllerDeployments.Items {
 		singleMeshEnforced := deployment.ObjectMeta.Labels["enforceSingleMesh"] == "true"
 		name := deployment.ObjectMeta.Labels["meshName"]
 		if singleMeshEnforced {
@@ -351,14 +362,14 @@ func (i *installCmd) validateOptions() error {
 
 	// Enforce single mesh cluster if needed
 	if i.enforceSingleMesh {
-		if len(list.Items) != 0 {
+		if len(osmControllerDeployments.Items) != 0 {
 			return errors.Errorf("Meshes already exist in cluster. Cannot enforce single mesh cluster.")
 		}
 	}
 
 	if i.deployPrometheus {
 		if !i.enablePrometheusScraping {
-			fmt.Fprintf(i.out, "Prometheus scraping is disabled. To enable it, set prometheus_scraping in %s/%s to true.\n", settings.Namespace(), constants.OSMConfigMap)
+			_, _ = fmt.Fprintf(i.out, "Prometheus scraping is disabled. To enable it, set prometheus_scraping in %s/%s to true.\n", settings.Namespace(), constants.OSMConfigMap)
 		}
 	}
 

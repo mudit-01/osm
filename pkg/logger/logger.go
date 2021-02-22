@@ -1,3 +1,4 @@
+// Package logger implements utility routines to initialize the logging facility used by OSM components.
 package logger
 
 import (
@@ -18,7 +19,7 @@ import (
 type CallerHook struct{}
 
 // Run adds additional context
-func (h CallerHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
+func (h CallerHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
 	if _, file, line, ok := runtime.Caller(3); ok {
 		e.Str("file", fmt.Sprintf("%s:%d", path.Base(file), line))
 	}

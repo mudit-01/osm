@@ -10,6 +10,7 @@ import (
 	"github.com/openservicemesh/osm/pkg/announcements"
 	"github.com/openservicemesh/osm/pkg/envoy"
 	"github.com/openservicemesh/osm/pkg/kubernetes/events"
+	"github.com/openservicemesh/osm/pkg/metricsstore"
 	"github.com/openservicemesh/osm/pkg/utils"
 )
 
@@ -18,28 +19,23 @@ import (
 func (s *Server) StreamAggregatedResources(server xds_discovery.AggregatedDiscoveryService_StreamAggregatedResourcesServer) error {
 	// When a new Envoy proxy connects, ValidateClient would ensure that it has a valid certificate,
 	// and the Subject CN is in the allowedCommonNames set.
-	cn, err := utils.ValidateClient(server.Context(), nil)
+	certCommonName, certSerialNumber, err := utils.ValidateClient(server.Context(), nil)
 	if err != nil {
-		return errors.Wrap(err, "[%s] Could not start stream")
+		return errors.Wrap(err, "Could not start Aggregated Discovery Service gRPC stream for newly connected Envoy proxy")
 	}
 
-	// TODO(draychev): check for envoy.ErrTooManyConnections
+	// TODO(draychev): check for envoy.ErrTooManyConnections; GitHub Issue https://github.com/openservicemesh/osm/issues/2332
 
-	ip := utils.GetIPFromContext(server.Context())
-
-	svcList, err := s.catalog.GetServicesFromEnvoyCertificate(cn)
-	if err != nil {
-		log.Error().Err(err).Msgf("Error fetching service for Envoy %s with CN %s", ip, cn)
-		return err
-	}
-	// Github Issue #1575
-	namespacedService := svcList[0]
-
-	log.Info().Msgf("Client %s connected: Subject CN=%s; Service=%s", ip, cn, namespacedService)
+	log.Trace().Msgf("Envoy with certificate SerialNumber=%s connected", certSerialNumber)
+	metricsstore.DefaultMetricsStore.ProxyConnectCount.Inc()
 
 	// This is the Envoy proxy that just connected to the control plane.
-	proxy := envoy.NewProxy(cn, ip)
-	s.catalog.RegisterProxy(proxy)
+	// NOTE: This is step 1 of the registration. At this point we do not yet have context on the Pod.
+	//       Details on which Pod this Envoy is fronting will arrive via xDS in the NODE_ID string.
+	//       When this arrives we will call RegisterProxy() a second time - this time with Pod context!
+	proxy := envoy.NewProxy(certCommonName, certSerialNumber, utils.GetIPFromContext(server.Context()))
+	s.catalog.RegisterProxy(proxy) // First of Two invocations.  Second one will be during xDS hand-shake!
+
 	defer s.catalog.UnregisterProxy(proxy)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,25 +51,36 @@ func (s *Server) StreamAggregatedResources(server xds_discovery.AggregatedDiscov
 	// Register to Envoy global broadcast updates
 	broadcastUpdate := events.GetPubSubInstance().Subscribe(announcements.ProxyBroadcast)
 
+	// Issues a send all response on a connecting envoy
+	// If this were to fail, it most likely just means we still have configuration being applied on flight,
+	// which will get triggered by the dispatcher anyway
+	s.sendAllResponses(proxy, &server, s.cfg)
+
 	for {
 		select {
 		case <-ctx.Done():
+			metricsstore.DefaultMetricsStore.ProxyConnectCount.Dec()
 			return nil
 
 		case <-quit:
-			log.Info().Msg("Stream closed!")
+			log.Debug().Msgf("gRPC stream with Envoy on Pod with UID=%s closed!", proxy.GetPodUID())
+			metricsstore.DefaultMetricsStore.ProxyConnectCount.Dec()
 			return nil
 
 		case discoveryRequest, ok := <-requests:
-			log.Info().Msgf("Received %s (nonce=%s; version=%s; resources=%v) from Envoy %s", discoveryRequest.TypeUrl, discoveryRequest.ResponseNonce, discoveryRequest.VersionInfo, discoveryRequest.ResourceNames, proxy.GetCommonName())
-			log.Info().Msgf("Last sent for %s nonce=%s; last sent version=%s for Envoy %s", discoveryRequest.TypeUrl, discoveryRequest.ResponseNonce, discoveryRequest.VersionInfo, proxy.GetCommonName())
+			log.Debug().Msgf("Received %s (nonce=%s; version=%s; resources=%v) from Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s",
+				discoveryRequest.TypeUrl, discoveryRequest.ResponseNonce, discoveryRequest.VersionInfo, discoveryRequest.ResourceNames, proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
+			log.Debug().Msgf("Last sent for %s nonce=%s; last sent version=%s for Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s",
+				discoveryRequest.TypeUrl, discoveryRequest.ResponseNonce, discoveryRequest.VersionInfo, proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
 			if !ok {
-				log.Error().Msgf("Proxy %s closed GRPC!", proxy.GetCommonName())
+				log.Error().Msgf("Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s closed gRPC!", proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
+				metricsstore.DefaultMetricsStore.ProxyConnectCount.Dec()
 				return errGrpcClosed
 			}
 
 			if discoveryRequest.ErrorDetail != nil {
-				log.Error().Msgf("[NACK] Discovery request error from proxy %s: %s", proxy, discoveryRequest.ErrorDetail)
+				log.Error().Msgf("[NACK] DiscoveryRequest error from Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s: %s",
+					proxy.GetCertificateSerialNumber(), proxy.GetPodUID(), discoveryRequest.ErrorDetail)
 				// NOTE(draychev): We could also return errEnvoyError - but it seems appropriate to also ignore this request and continue on.
 				continue
 			}
@@ -91,21 +98,24 @@ func (s *Server) StreamAggregatedResources(server xds_discovery.AggregatedDiscov
 				if ackVersion, err = strconv.ParseUint(discoveryRequest.VersionInfo, 10, 64); err != nil {
 					// It is probable that Envoy responded with a VersionInfo we did not understand
 					// We log this and continue. The ackVersion will be 0 in this state.
-					log.Error().Err(err).Msgf("Error parsing %s discovery request VersionInfo (%s) from proxy %s", typeURL, discoveryRequest.VersionInfo, proxy.GetCommonName())
+					log.Error().Err(err).Msgf("Error parsing DiscoveryRequest with TypeURL=%s VersionInfo=%s from Envoy with Certificate SerialNumber=%s on Pod with UID=%s",
+						typeURL, discoveryRequest.VersionInfo, proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
 				}
 			}
 
-			log.Debug().Msgf("Incoming Discovery Request %s (nonce=%s; version=%d) from Envoy %s; last applied version: %d",
+			log.Debug().Msgf("Incoming Discovery Request %s (nonce=%s; version=%d) from Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s; last applied version: %d",
 				discoveryRequest.TypeUrl,
 				discoveryRequest.ResponseNonce,
 				ackVersion,
-				proxy.GetCommonName(),
+				proxy.GetCertificateSerialNumber(),
+				proxy.GetPodUID(),
 				proxy.GetLastAppliedVersion(typeURL))
 
-			log.Debug().Msgf("Last sent nonce=%s; last sent version=%d for Envoy %s",
+			log.Debug().Msgf("Last sent nonce=%s; last sent version=%d for Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s",
 				proxy.GetLastSentNonce(typeURL),
 				proxy.GetLastSentVersion(typeURL),
-				proxy.GetCommonName())
+				proxy.GetCertificateSerialNumber(),
+				proxy.GetPodUID())
 
 			proxy.SetLastAppliedVersion(typeURL, ackVersion)
 
@@ -114,7 +124,8 @@ func (s *Server) StreamAggregatedResources(server xds_discovery.AggregatedDiscov
 			// interpreted as an acknowledgement of a previously sent request.
 			// Such DiscoveryRequest requires no further action.
 			if ackVersion > 0 && ackVersion <= proxy.GetLastSentVersion(typeURL) {
-				log.Debug().Msgf("Skipping request %s for resources (%v),  VersionInfo (%d) <= last sent VersionInfo (%d); ACK", typeURL, discoveryRequest.ResourceNames, ackVersion, proxy.GetLastSentVersion(typeURL))
+				log.Debug().Msgf("Skipping request of type %s from Envoy on Pod with UID=%s for resources (%v),  VersionInfo (%d) <= last sent VersionInfo (%d); ACK",
+					typeURL, proxy.GetPodUID(), discoveryRequest.ResourceNames, ackVersion, proxy.GetLastSentVersion(typeURL))
 				continue
 			}
 
@@ -131,31 +142,29 @@ func (s *Server) StreamAggregatedResources(server xds_discovery.AggregatedDiscov
 
 			lastNonce := proxy.GetLastSentNonce(typeURL)
 			if lastNonce != "" && discoveryRequest.ResponseNonce == lastNonce {
-				log.Debug().Msgf("Nothing changed since Nonce=%s", discoveryRequest.ResponseNonce)
+				log.Debug().Msgf("Nothing changed for Envoy on Pod with UID=%s since Nonce=%s", proxy.GetPodUID(), discoveryRequest.ResponseNonce)
 				continue
 			}
 
 			if discoveryRequest.ResponseNonce != "" {
-				log.Debug().Msgf("Received discovery request with Nonce=%s; matches=%t; proxy last Nonce=%s", discoveryRequest.ResponseNonce, discoveryRequest.ResponseNonce == lastNonce, lastNonce)
+				log.Debug().Msgf("Received discovery request with Nonce=%s from Envoy on Pod with UID=%s; matches=%t; proxy last Nonce=%s",
+					discoveryRequest.ResponseNonce, proxy.GetPodUID(), discoveryRequest.ResponseNonce == lastNonce, lastNonce)
 			}
-			log.Info().Msgf("Received discovery request <%s> for resources (%v) from Envoy <%s> with Nonce=%s", discoveryRequest.TypeUrl, discoveryRequest.ResourceNames, proxy, discoveryRequest.ResponseNonce)
+			log.Debug().Msgf("Received discovery request <%s> for resources (%v) from Envoy on Pod with UID=<%s> with Nonce=%s",
+				discoveryRequest.TypeUrl, discoveryRequest.ResourceNames, proxy.GetPodUID(), discoveryRequest.ResponseNonce)
 
-			resp, err := s.newAggregatedDiscoveryResponse(proxy, &discoveryRequest, s.cfg)
+			err := s.sendTypeResponse(typeURL, proxy, &server, &discoveryRequest, s.cfg)
 			if err != nil {
-				log.Error().Err(err).Msgf("Error composing a DiscoveryResponse")
-				continue
-			}
-
-			if err := server.Send(resp); err != nil {
-				log.Error().Err(err).Msgf("Error sending DiscoveryResponse")
+				log.Error().Err(err).Msgf("Failed to create and send %s update to Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s",
+					envoy.XDSShortURINames[typeURL], proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
 			}
 
 		case <-broadcastUpdate:
-			log.Info().Msgf("Broadcast update received for %s", proxy.GetCommonName())
+			log.Debug().Msgf("Broadcast update received for Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s", proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
 			s.sendAllResponses(proxy, &server, s.cfg)
 
 		case <-proxy.GetAnnouncementsChannel():
-			log.Info().Msgf("Individual update for %s", proxy.GetCommonName())
+			log.Debug().Msgf("Individual update for Envoy with xDS Certificate SerialNumber=%s on Pod with UID=%s", proxy.GetCertificateSerialNumber(), proxy.GetPodUID())
 			s.sendAllResponses(proxy, &server, s.cfg)
 		}
 	}

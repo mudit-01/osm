@@ -1,3 +1,4 @@
+// Package tresor implements the certificate.Manager interface for Tresor, a custom certificate provider in OSM.
 package tresor
 
 import (
@@ -49,6 +50,9 @@ type CertManager struct {
 type Certificate struct {
 	// The commonName of the certificate
 	commonName certificate.CommonName
+
+	// The serial number of the certificate
+	serialNumber certificate.SerialNumber
 
 	// When the cert expires
 	expiration time.Time

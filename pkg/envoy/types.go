@@ -1,3 +1,5 @@
+// Package envoy implements utility routines related to Envoy proxy, and models an instance of a proxy
+// to be able to generate XDS configurations for it.
 package envoy
 
 import (
@@ -30,6 +32,15 @@ var ValidURI = map[string]TypeURI{
 	string(TypeZipkinConfig):       TypeZipkinConfig,
 }
 
+// XDSShortURINames are shortened versions of the URI types
+var XDSShortURINames = map[TypeURI]string{
+	TypeSDS: "SDS",
+	TypeCDS: "CDS",
+	TypeLDS: "LDS",
+	TypeRDS: "RDS",
+	TypeEDS: "EDS",
+}
+
 const (
 	// TypeSDS is the SDS type URI.
 	TypeSDS TypeURI = "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret"
@@ -54,6 +65,7 @@ const (
 
 	accessLogPath = "/dev/stdout"
 
-	//LocalClusterSuffix is the tag to append to local clusters
-	LocalClusterSuffix = "-local"
+	// localClusterSuffix is the tag to append to the local cluster name corresponding to a service cluster.
+	// The local cluster refers to the cluster corresponding to the service the proxy is fronting, accessible over localhost by the proxy.
+	localClusterSuffix = "-local"
 )
