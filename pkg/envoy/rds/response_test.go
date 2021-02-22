@@ -5,6 +5,7 @@ import (
 
 	set "github.com/deckarep/golang-set"
 	"github.com/golang/mock/gomock"
+	split "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/split/v1alpha2"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,20 +42,37 @@ var _ = Describe("Construct RoutePolicyWeightedClusters object", func() {
 				ClusterName: service.ClusterName("osm/bookstore-1"),
 				Weight:      constants.ClusterWeightAcceptAll,
 			}
-			routePolicy := trafficpolicy.HTTPRoute{
+			routePolicy := trafficpolicy.HTTPRouteMatch{
 				PathRegex: "/books-bought",
 				Methods:   []string{"GET"},
 			}
 
 			routePolicyWeightedClusters := createRoutePolicyWeightedClusters(routePolicy, weightedCluster, "bookstore-1")
 			Expect(routePolicyWeightedClusters).NotTo(Equal(nil))
-			Expect(routePolicyWeightedClusters.HTTPRoute.PathRegex).To(Equal("/books-bought"))
-			Expect(routePolicyWeightedClusters.HTTPRoute.Methods).To(Equal([]string{"GET"}))
+			Expect(routePolicyWeightedClusters.HTTPRouteMatch.PathRegex).To(Equal("/books-bought"))
+			Expect(routePolicyWeightedClusters.HTTPRouteMatch.Methods).To(Equal([]string{"GET"}))
 			Expect(routePolicyWeightedClusters.WeightedClusters.Cardinality()).To(Equal(1))
 			routePolicyWeightedClustersSlice := routePolicyWeightedClusters.WeightedClusters.ToSlice()
 			Expect(string(routePolicyWeightedClustersSlice[0].(service.WeightedCluster).ClusterName)).To(Equal("osm/bookstore-1"))
 			Expect(routePolicyWeightedClustersSlice[0].(service.WeightedCluster).Weight).To(Equal(100))
 			Expect(routePolicyWeightedClusters.Hostnames).To(Equal(set.NewSet("bookstore-1")))
+		})
+	})
+})
+
+var _ = Describe("IsTrafficSplitService", func() {
+	svc := tests.BookstoreApexService
+	Context("Check if a mesh service is root service of TrafficSplit", func() {
+		It("Returns true", func() {
+			allTrafficSplits := []*split.TrafficSplit{&tests.TrafficSplit}
+			Expect(isTrafficSplitService(svc, allTrafficSplits)).To(Equal(true))
+		})
+
+		It("Return false", func() {
+			mutation := tests.TrafficSplit
+			mutation.Spec.Service = mutation.Spec.Service + "-mutation"
+			allTrafficSplits := []*split.TrafficSplit{&mutation}
+			Expect(isTrafficSplitService(svc, allTrafficSplits)).To(Equal(false))
 		})
 	})
 })
@@ -66,7 +84,7 @@ var _ = Describe("AggregateRoutesByDomain", func() {
 		It("Returns a new aggregated map of domain and routes", func() {
 
 			weightedCluster := service.WeightedCluster{ClusterName: service.ClusterName("osm/bookstore-1"), Weight: 100}
-			routePolicies := []trafficpolicy.HTTPRoute{
+			routePolicies := []trafficpolicy.HTTPRouteMatch{
 				{PathRegex: "/books-bought", Methods: []string{"GET"}},
 				{PathRegex: "/buy-a-book", Methods: []string{"GET"}},
 			}
@@ -99,7 +117,7 @@ var _ = Describe("AggregateRoutesByDomain", func() {
 				ClusterName: service.ClusterName("osm/bookstore-1"),
 				Weight:      constants.ClusterWeightAcceptAll,
 			}
-			routePolicy := trafficpolicy.HTTPRoute{
+			routePolicy := trafficpolicy.HTTPRouteMatch{
 				PathRegex: "/update-books-bought",
 				Methods:   []string{"GET"},
 				Headers: map[string]string{
@@ -113,9 +131,9 @@ var _ = Describe("AggregateRoutesByDomain", func() {
 			Expect(domainRoutesMap).NotTo(Equal(nil))
 			Expect(len(domainRoutesMap)).To(Equal(1))
 			Expect(len(domainRoutesMap["bookstore"])).To(Equal(3))
-			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRoute).To(Equal(routePolicy))
+			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRouteMatch).To(Equal(routePolicy))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].WeightedClusters.Cardinality()).To(Equal(1))
-			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRoute).To(Equal(trafficpolicy.HTTPRoute{PathRegex: "/update-books-bought", Methods: []string{"GET"}, Headers: map[string]string{testHeaderKey1: "This is a test header 1"}}))
+			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRouteMatch).To(Equal(trafficpolicy.HTTPRouteMatch{PathRegex: "/update-books-bought", Methods: []string{"GET"}, Headers: map[string]string{testHeaderKey1: "This is a test header 1"}}))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].WeightedClusters.Equal(weightedClustersMap)).To(Equal(true))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].Hostnames).To(Equal(expectedDomains))
 		})
@@ -128,7 +146,7 @@ var _ = Describe("AggregateRoutesByDomain", func() {
 				ClusterName: service.ClusterName("osm/bookstore-2"),
 				Weight:      constants.ClusterWeightAcceptAll,
 			}
-			routePolicy := trafficpolicy.HTTPRoute{
+			routePolicy := trafficpolicy.HTTPRouteMatch{
 				PathRegex: "/update-books-bought",
 				Methods:   []string{"GET"},
 				Headers: map[string]string{
@@ -143,7 +161,7 @@ var _ = Describe("AggregateRoutesByDomain", func() {
 			Expect(len(domainRoutesMap)).To(Equal(1))
 			Expect(len(domainRoutesMap["bookstore"])).To(Equal(3))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].WeightedClusters.Cardinality()).To(Equal(2))
-			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRoute).To(Equal(trafficpolicy.HTTPRoute{PathRegex: "/update-books-bought", Methods: []string{"GET", "GET"}, Headers: map[string]string{testHeaderKey1: "This is a test header 1", testHeaderKey2: "This is a test header 2"}}))
+			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].HTTPRouteMatch).To(Equal(trafficpolicy.HTTPRouteMatch{PathRegex: "/update-books-bought", Methods: []string{"GET", "GET"}, Headers: map[string]string{testHeaderKey1: "This is a test header 1", testHeaderKey2: "This is a test header 2"}}))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].WeightedClusters.Equal(weightedClustersMap)).To(Equal(true))
 			Expect(domainRoutesMap["bookstore"][routePolicy.PathRegex].Hostnames).To(Equal(expectedDomains))
 		})
@@ -196,7 +214,7 @@ var _ = Describe("RDS Response", func() {
 	// Create Bookstore apex Service
 	svc = tests.NewServiceFixture(tests.BookstoreApexService.Name, tests.BookstoreApexService.Namespace, nil)
 	if _, err := kubeClient.CoreV1().Services(tests.BookstoreApexService.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{}); err != nil {
-		GinkgoT().Fatalf("Error creating new Bookstire Apex service: %s", err.Error())
+		GinkgoT().Fatalf("Error creating new Bookstore Apex service: %s", err.Error())
 	}
 
 	mockIngressMonitor.EXPECT().GetIngressResources(gomock.Any()).Return(nil, nil).AnyTimes()
@@ -236,7 +254,6 @@ var _ = Describe("RDS Response", func() {
 	mockKubeController.EXPECT().IsMonitoredNamespace(tests.BookstoreV2Service.Namespace).Return(true).AnyTimes()
 	mockKubeController.EXPECT().IsMonitoredNamespace(tests.BookbuyerService.Namespace).Return(true).AnyTimes()
 	mockKubeController.EXPECT().IsMonitoredNamespace(tests.BookwarehouseService.Namespace).Return(true).AnyTimes()
-	mockKubeController.EXPECT().GetAnnouncementsChannel(k8s.Services).Return(announcementsCh).AnyTimes()
 	mockKubeController.EXPECT().ListMonitoredNamespaces().Return(listExpectedNs, nil).AnyTimes()
 
 	meshCatalog := catalog.NewMeshCatalog(mockKubeController, kubeClient, smi.NewFakeMeshSpecClient(), certManager,

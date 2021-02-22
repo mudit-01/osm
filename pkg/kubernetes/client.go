@@ -19,20 +19,32 @@ import (
 )
 
 // NewKubernetesController returns a new kubernetes.Controller which means to provide access to locally-cached k8s resources
-func NewKubernetesController(kubeClient kubernetes.Interface, meshName string, stop chan struct{}) (Controller, error) {
+func NewKubernetesController(kubeClient kubernetes.Interface, meshName string, stop chan struct{}, selectInformers ...InformerKey) (Controller, error) {
 	// Initialize client object
 	client := Client{
-		kubeClient:    kubeClient,
-		meshName:      meshName,
-		informers:     InformerCollection{},
-		announcements: make(map[InformerKey]chan announcements.Announcement),
-		cacheSynced:   make(chan interface{}),
+		kubeClient:  kubeClient,
+		meshName:    meshName,
+		informers:   informerCollection{},
+		cacheSynced: make(chan interface{}),
 	}
 
-	// Initialize resources here
-	client.initNamespaceMonitor()
-	client.initServicesMonitor()
-	client.initPodMonitor()
+	// Initialize informers
+	informerInitHandlerMap := map[InformerKey]func(){
+		Namespaces:      client.initNamespaceMonitor,
+		Services:        client.initServicesMonitor,
+		ServiceAccounts: client.initServiceAccountsMonitor,
+		Pods:            client.initPodMonitor,
+		Endpoints:       client.initEndpointMonitor,
+	}
+
+	// If specific informers are not selected to be initialized, initialize all informers
+	if len(selectInformers) == 0 {
+		selectInformers = []InformerKey{Namespaces, Services, ServiceAccounts, Pods, Endpoints}
+	}
+
+	for _, informer := range selectInformers {
+		informerInitHandlerMap[informer]()
+	}
 
 	if err := client.run(stop); err != nil {
 		log.Error().Err(err).Msg("Could not start Kubernetes Namespaces client")
@@ -62,7 +74,13 @@ func (c *Client) initNamespaceMonitor() {
 		Update: announcements.NamespaceUpdated,
 		Delete: announcements.NamespaceDeleted,
 	}
-	c.informers[Namespaces].AddEventHandler(GetKubernetesEventHandlers((string)(Namespaces), ProviderName, nil, nil, nil, nsEventTypes))
+	c.informers[Namespaces].AddEventHandler(GetKubernetesEventHandlers((string)(Namespaces), providerName, nil, nsEventTypes))
+}
+
+// Function to filter K8s meta Objects by OSM's isMonitoredNamespace
+func (c *Client) shouldObserve(obj interface{}) bool {
+	ns := reflect.ValueOf(obj).Elem().FieldByName("ObjectMeta").FieldByName("Namespace").String()
+	return c.IsMonitoredNamespace(ns)
 }
 
 // Initializes Service monitoring
@@ -70,42 +88,49 @@ func (c *Client) initServicesMonitor() {
 	informerFactory := informers.NewSharedInformerFactory(c.kubeClient, DefaultKubeEventResyncInterval)
 	c.informers[Services] = informerFactory.Core().V1().Services().Informer()
 
-	// Function to filter Services by Namespace
-	shouldObserve := func(obj interface{}) bool {
-		ns := reflect.ValueOf(obj).Elem().FieldByName("ObjectMeta").FieldByName("Namespace").String()
-		return c.IsMonitoredNamespace(ns)
-	}
-
-	// Announcement channel for Services
-	c.announcements[Services] = make(chan announcements.Announcement)
-
 	svcEventTypes := EventTypes{
 		Add:    announcements.ServiceAdded,
 		Update: announcements.ServiceUpdated,
 		Delete: announcements.ServiceDeleted,
 	}
-	c.informers[Services].AddEventHandler(GetKubernetesEventHandlers((string)(Services), ProviderName, c.announcements[Services], shouldObserve, nil, svcEventTypes))
+	c.informers[Services].AddEventHandler(GetKubernetesEventHandlers((string)(Services), providerName, c.shouldObserve, svcEventTypes))
+}
+
+// Initializes Service Account monitoring
+func (c *Client) initServiceAccountsMonitor() {
+	informerFactory := informers.NewSharedInformerFactory(c.kubeClient, DefaultKubeEventResyncInterval)
+	c.informers[ServiceAccounts] = informerFactory.Core().V1().ServiceAccounts().Informer()
+
+	svcEventTypes := EventTypes{
+		Add:    announcements.ServiceAccountAdded,
+		Update: announcements.ServiceAccountUpdated,
+		Delete: announcements.ServiceAccountDeleted,
+	}
+	c.informers[ServiceAccounts].AddEventHandler(GetKubernetesEventHandlers((string)(ServiceAccounts), providerName, c.shouldObserve, svcEventTypes))
 }
 
 func (c *Client) initPodMonitor() {
 	informerFactory := informers.NewSharedInformerFactory(c.kubeClient, DefaultKubeEventResyncInterval)
 	c.informers[Pods] = informerFactory.Core().V1().Pods().Informer()
 
-	// Function to filter Pods by Namespace
-	shouldObserve := func(obj interface{}) bool {
-		ns := reflect.ValueOf(obj).Elem().FieldByName("ObjectMeta").FieldByName("Namespace").String()
-		return c.IsMonitoredNamespace(ns)
-	}
-
-	// Announcement channel for Pods
-	c.announcements[Pods] = make(chan announcements.Announcement)
-
 	podEventTypes := EventTypes{
 		Add:    announcements.PodAdded,
 		Update: announcements.PodUpdated,
 		Delete: announcements.PodDeleted,
 	}
-	c.informers[Pods].AddEventHandler(GetKubernetesEventHandlers((string)(Pods), ProviderName, c.announcements[Pods], shouldObserve, nil, podEventTypes))
+	c.informers[Pods].AddEventHandler(GetKubernetesEventHandlers((string)(Pods), providerName, c.shouldObserve, podEventTypes))
+}
+
+func (c *Client) initEndpointMonitor() {
+	informerFactory := informers.NewSharedInformerFactory(c.kubeClient, DefaultKubeEventResyncInterval)
+	c.informers[Endpoints] = informerFactory.Core().V1().Endpoints().Informer()
+
+	eptEventTypes := EventTypes{
+		Add:    announcements.EndpointAdded,
+		Update: announcements.EndpointUpdated,
+		Delete: announcements.EndpointDeleted,
+	}
+	c.informers[Endpoints].AddEventHandler(GetKubernetesEventHandlers((string)(Endpoints), providerName, c.shouldObserve, eptEventTypes))
 }
 
 func (c *Client) run(stop <-chan struct{}) error {
@@ -124,7 +149,7 @@ func (c *Client) run(stop <-chan struct{}) error {
 
 		go informer.Run(stop)
 		names = append(names, (string)(name))
-		log.Info().Msgf("Waiting informer for %s cache sync...", name)
+		log.Info().Msgf("Waiting for %s informer cache sync...", name)
 		hasSynced = append(hasSynced, informer.HasSynced)
 	}
 
@@ -186,9 +211,19 @@ func (c Client) ListServices() []*corev1.Service {
 	return services
 }
 
-// GetAnnouncementsChannel gets the Announcements channel back
-func (c Client) GetAnnouncementsChannel(informerID InformerKey) <-chan announcements.Announcement {
-	return c.announcements[informerID]
+// ListServiceAccounts returns a list of service accounts that are part of monitored namespaces
+func (c Client) ListServiceAccounts() []*corev1.ServiceAccount {
+	var serviceAccounts []*corev1.ServiceAccount
+
+	for _, serviceInterface := range c.informers[ServiceAccounts].GetStore().List() {
+		sa := serviceInterface.(*corev1.ServiceAccount)
+
+		if !c.IsMonitoredNamespace(sa.Namespace) {
+			continue
+		}
+		serviceAccounts = append(serviceAccounts, sa)
+	}
+	return serviceAccounts
 }
 
 // GetNamespace returns a Namespace resource if found, nil otherwise.
@@ -215,6 +250,19 @@ func (c Client) ListPods() []*corev1.Pod {
 		pods = append(pods, pod)
 	}
 	return pods
+}
+
+// GetEndpoints returns the endpoint for a given service, otherwise returns nil if not found
+// or error if the API errored out.
+func (c Client) GetEndpoints(svc service.MeshService) (*corev1.Endpoints, error) {
+	ep, exists, err := c.informers[Endpoints].GetStore().GetByKey(svc.String())
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return ep.(*corev1.Endpoints), nil
+	}
+	return nil, nil
 }
 
 // ListServiceAccountsForService lists ServiceAccounts associated with the given service

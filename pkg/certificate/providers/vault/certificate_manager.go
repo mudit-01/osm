@@ -28,7 +28,7 @@ const (
 	ttlField          = "ttl"
 
 	checkCertificateExpirationInterval = 5 * time.Second
-	tmpCertValidityPeriod              = 1 * time.Second
+	decade                             = 8765 * time.Hour
 )
 
 // NewCertManager implements certificate.Manager and wraps a Hashi Vault with methods to allow easy certificate issuance.
@@ -50,23 +50,38 @@ func NewCertManager(vaultAddr, token string, role string, cfg configurator.Confi
 
 	c.client.SetToken(token)
 
-	// Create a temp certificate to determine the issuing CA
-	tmpCert, err := c.issue("localhost", tmpCertValidityPeriod)
+	issuingCA, serialNumber, err := c.getIssuingCA(c.issue)
 	if err != nil {
 		return nil, err
 	}
 
 	c.ca = &Certificate{
-		commonName: constants.CertificationAuthorityCommonName,
-		expiration: time.Now().Add(8765 * time.Hour), // a decade
-		certChain:  tmpCert.GetIssuingCA(),
-		issuingCA:  tmpCert.GetIssuingCA(),
+		commonName:   constants.CertificationAuthorityCommonName,
+		serialNumber: serialNumber,
+		expiration:   time.Now().Add(decade),
+		certChain:    issuingCA,
+		issuingCA:    issuingCA,
 	}
 
 	// Instantiating a new certificate rotation mechanism will start a goroutine for certificate rotation.
 	rotor.New(c).Start(checkCertificateExpirationInterval)
 
 	return c, nil
+}
+
+func (cm *CertManager) getIssuingCA(issue func(certificate.CommonName, time.Duration) (certificate.Certificater, error)) ([]byte, certificate.SerialNumber, error) {
+	// Create a temp certificate to determine the public part of the issuing CA
+	cert, err := issue("localhost", decade)
+	if err != nil {
+		return nil, "", err
+	}
+
+	issuingCA := cert.GetIssuingCA()
+
+	// We are not going to need this certificate - remove it
+	cm.ReleaseCertificate(cert.GetCommonName())
+
+	return issuingCA, cert.GetSerialNumber(), err
 }
 
 func (cm *CertManager) issue(cn certificate.CommonName, validityPeriod time.Duration) (certificate.Certificater, error) {
@@ -86,9 +101,9 @@ func (cm *CertManager) deleteFromCache(cn certificate.CommonName) {
 func (cm *CertManager) getFromCache(cn certificate.CommonName) certificate.Certificater {
 	if certificateInterface, exists := cm.cache.Load(cn); exists {
 		cert := certificateInterface.(certificate.Certificater)
-		log.Trace().Msgf("Certificate found in cache CN=%s", cn)
+		log.Trace().Msgf("Certificate found in cache SerialNumber=%s", cert.GetSerialNumber())
 		if rotor.ShouldRotate(cert) {
-			log.Trace().Msgf("Certificate found in cache but has expired CN=%s", cn)
+			log.Trace().Msgf("Certificate found in cache but has expired SerialNumber=%s", cert.GetSerialNumber())
 			return nil
 		}
 		return cert
@@ -98,8 +113,6 @@ func (cm *CertManager) getFromCache(cn certificate.CommonName) certificate.Certi
 
 // IssueCertificate issues a certificate by leveraging the Hashi Vault CertManager.
 func (cm *CertManager) IssueCertificate(cn certificate.CommonName, validityPeriod time.Duration) (certificate.Certificater, error) {
-	log.Info().Msgf("Issuing new certificate for CN=%s", cn)
-
 	start := time.Now()
 
 	if cert := cm.getFromCache(cn); cert != nil {
@@ -113,13 +126,14 @@ func (cm *CertManager) IssueCertificate(cn certificate.CommonName, validityPerio
 
 	cm.cache.Store(cn, cert)
 
-	log.Info().Msgf("Issuing new certificate for CN=%s took %+v", cn, time.Since(start))
+	log.Trace().Msgf("Issued new certificate with SerialNumber=%s took %+v", cert.GetSerialNumber(), time.Since(start))
 
 	return cert, nil
 }
 
 // ReleaseCertificate is called when a cert will no longer be needed and should be removed from the system.
 func (cm *CertManager) ReleaseCertificate(cn certificate.CommonName) {
+	// TODO(draychev): implement Hashicorp Vault delete-cert API here: https://github.com/openservicemesh/osm/issues/2068
 	cm.deleteFromCache(cn)
 }
 
@@ -128,7 +142,7 @@ func (cm *CertManager) ListCertificates() ([]certificate.Certificater, error) {
 	var certs []certificate.Certificater
 	cm.cache.Range(func(cnInterface interface{}, certInterface interface{}) bool {
 		certs = append(certs, certInterface.(certificate.Certificater))
-		return true
+		return true // continue the iteration
 	})
 	return certs, nil
 }
@@ -153,8 +167,6 @@ func (cm *CertManager) GetAnnouncementsChannel() <-chan announcements.Announceme
 
 // RotateCertificate implements certificate.Manager and rotates an existing certificate.
 func (cm *CertManager) RotateCertificate(cn certificate.CommonName) (certificate.Certificater, error) {
-	log.Info().Msgf("Rotating certificate for CN=%s", cn)
-
 	start := time.Now()
 
 	cert, err := cm.issue(cn, cm.cfg.GetServiceCertValidityPeriod())
@@ -165,7 +177,7 @@ func (cm *CertManager) RotateCertificate(cn certificate.CommonName) (certificate
 	cm.cache.Store(cn, cert)
 	cm.announcements <- announcements.Announcement{}
 
-	log.Info().Msgf("Rotating certificate CN=%s took %+v", cn, time.Since(start))
+	log.Trace().Msgf("Rotated certificate with new SerialNumber=%s took %+v", cert.GetSerialNumber(), time.Since(start))
 
 	return cert, nil
 }
@@ -186,7 +198,7 @@ type Certificate struct {
 	issuingCA pem.RootCertificate
 
 	// serialNumber is the serial_number value in the Data field assigned to the Certificate Hashicorp Vault issued
-	serialNumber string
+	serialNumber certificate.SerialNumber
 }
 
 // GetCommonName returns the common name of the given certificate.
@@ -217,15 +229,15 @@ func (c Certificate) GetExpiration() time.Time {
 func newCert(cn certificate.CommonName, secret *api.Secret, expiration time.Time) *Certificate {
 	return &Certificate{
 		commonName:   cn,
+		serialNumber: certificate.SerialNumber(secret.Data[serialNumberField].(string)),
 		expiration:   expiration,
 		certChain:    pem.Certificate(secret.Data[certificateField].(string)),
 		privateKey:   []byte(secret.Data[privateKeyField].(string)),
 		issuingCA:    pem.RootCertificate(secret.Data[issuingCAField].(string)),
-		serialNumber: secret.Data[serialNumberField].(string),
 	}
 }
 
 // GetSerialNumber returns the serial number of the given certificate.
-func (c Certificate) GetSerialNumber() string {
+func (c Certificate) GetSerialNumber() certificate.SerialNumber {
 	return c.serialNumber
 }

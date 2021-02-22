@@ -1,22 +1,29 @@
+// Package tests implements utility routines used for unit testing.
 package tests
 
 import (
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 
-	target "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/access/v1alpha2"
-	spec "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/specs/v1alpha3"
+	access "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/access/v1alpha3"
+	spec "github.com/servicemeshinterface/smi-sdk-go/pkg/apis/specs/v1alpha4"
 	"github.com/servicemeshinterface/smi-sdk-go/pkg/apis/split/v1alpha2"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	backpressure "github.com/openservicemesh/osm/experimental/pkg/apis/policy/v1alpha1"
+	tresorPem "github.com/openservicemesh/osm/pkg/certificate/pem"
 	"github.com/openservicemesh/osm/pkg/constants"
 	"github.com/openservicemesh/osm/pkg/endpoint"
 	"github.com/openservicemesh/osm/pkg/service"
+	"github.com/openservicemesh/osm/pkg/tests/certificates"
 	"github.com/openservicemesh/osm/pkg/trafficpolicy"
 )
+
+// ErrDecodingPEMBlock is an error message emitted when a PEM block cannot be decoded
+var ErrDecodingPEMBlock = errors.New("failed to decode PEM block containing certificate")
 
 const (
 	// Namespace is the commonly used namespace.
@@ -44,9 +51,14 @@ const (
 	BookstoreServiceAccountName = "bookstore"
 	// BookbuyerServiceAccountName is the name of the bookbuyer service account
 	BookbuyerServiceAccountName = "bookbuyer"
+	// BookstoreV2ServiceAccountName is the name of the bookstore-v2 service account
+	BookstoreV2ServiceAccountName = "bookstore-v2"
 
 	// TrafficTargetName is the name of the traffic target SMI object.
 	TrafficTargetName = "bookbuyer-access-bookstore"
+
+	// BookstoreV2TrafficTargetName is the name of the traffic target SMI object.
+	BookstoreV2TrafficTargetName = "bookbuyer-access-bookstore-v2"
 
 	// BuyBooksMatchName is the name of the match object.
 	BuyBooksMatchName = "buy-books"
@@ -150,8 +162,34 @@ var (
 		"bookstore-v2.default.svc.cluster.local:8888",
 	}
 
+	// BookstoreApexHostnames are the hostnames for the bookstore-apex service
+	BookstoreApexHostnames = []string{
+		"bookstore-apex",
+		"bookstore-apex.default",
+		"bookstore-apex.default.svc",
+		"bookstore-apex.default.svc.cluster",
+		"bookstore-apex.default.svc.cluster.local",
+		"bookstore-apex:8888",
+		"bookstore-apex.default:8888",
+		"bookstore-apex.default.svc:8888",
+		"bookstore-apex.default.svc.cluster:8888",
+		"bookstore-apex.default.svc.cluster.local:8888",
+	}
+
+	// BookstoreApexNamespacedHostnames are the namespaced hostnames for the bookstore-apex service
+	BookstoreApexNamespacedHostnames = []string{
+		"bookstore-apex.default",
+		"bookstore-apex.default.svc",
+		"bookstore-apex.default.svc.cluster",
+		"bookstore-apex.default.svc.cluster.local",
+		"bookstore-apex.default:8888",
+		"bookstore-apex.default.svc:8888",
+		"bookstore-apex.default.svc.cluster:8888",
+		"bookstore-apex.default.svc.cluster.local:8888",
+	}
+
 	// BookstoreBuyHTTPRoute is an HTTP route to buy books
-	BookstoreBuyHTTPRoute = trafficpolicy.HTTPRoute{
+	BookstoreBuyHTTPRoute = trafficpolicy.HTTPRouteMatch{
 		PathRegex: BookstoreBuyPath,
 		Methods:   []string{"GET"},
 		Headers: map[string]string{
@@ -160,7 +198,7 @@ var (
 	}
 
 	// BookstoreSellHTTPRoute is an HTTP route to sell books
-	BookstoreSellHTTPRoute = trafficpolicy.HTTPRoute{
+	BookstoreSellHTTPRoute = trafficpolicy.HTTPRouteMatch{
 		PathRegex: BookstoreSellPath,
 		Methods:   []string{"GET"},
 		Headers: map[string]string{
@@ -179,7 +217,7 @@ var (
 		Name:        fmt.Sprintf("%s:default/bookbuyer->default/bookstore-v1", TrafficTargetName),
 		Destination: BookstoreV1Service,
 		Source:      BookbuyerService,
-		HTTPRoutes: []trafficpolicy.HTTPRoute{
+		HTTPRouteMatches: []trafficpolicy.HTTPRouteMatch{
 			{
 				PathRegex: BookstoreBuyPath,
 				Methods:   []string{"GET"},
@@ -199,10 +237,10 @@ var (
 
 	// BookstoreV2TrafficPolicy is a traffic policy SMI object.
 	BookstoreV2TrafficPolicy = trafficpolicy.TrafficTarget{
-		Name:        fmt.Sprintf("%s:default/bookbuyer->default/bookstore-v2", TrafficTargetName),
+		Name:        fmt.Sprintf("%s:default/bookbuyer->default/bookstore-v2", BookstoreV2TrafficTargetName),
 		Destination: BookstoreV2Service,
 		Source:      BookbuyerService,
-		HTTPRoutes: []trafficpolicy.HTTPRoute{
+		HTTPRouteMatches: []trafficpolicy.HTTPRouteMatch{
 			{
 				PathRegex: BookstoreBuyPath,
 				Methods:   []string{"GET"},
@@ -225,7 +263,7 @@ var (
 		Name:        fmt.Sprintf("%s:default/bookbuyer->default/bookstore-apex", TrafficTargetName),
 		Destination: BookstoreApexService,
 		Source:      BookbuyerService,
-		HTTPRoutes: []trafficpolicy.HTTPRoute{
+		HTTPRouteMatches: []trafficpolicy.HTTPRouteMatch{
 			{
 				PathRegex: BookstoreBuyPath,
 				Methods:   []string{"GET"},
@@ -264,27 +302,56 @@ var (
 	}
 
 	// TrafficTarget is a traffic target SMI object.
-	TrafficTarget = target.TrafficTarget{
+	TrafficTarget = access.TrafficTarget{
 		TypeMeta: v1.TypeMeta{
-			APIVersion: "access.smi-spec.io/v1alpha2",
+			APIVersion: "access.smi-spec.io/v1alpha3",
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: v1.ObjectMeta{
 			Name:      TrafficTargetName,
 			Namespace: "default",
 		},
-		Spec: target.TrafficTargetSpec{
-			Destination: target.IdentityBindingSubject{
-				Kind:      "Name",
+		Spec: access.TrafficTargetSpec{
+			Destination: access.IdentityBindingSubject{
+				Kind:      "ServiceAccount",
 				Name:      BookstoreServiceAccountName,
 				Namespace: "default",
 			},
-			Sources: []target.IdentityBindingSubject{{
-				Kind:      "Name",
+			Sources: []access.IdentityBindingSubject{{
+				Kind:      "ServiceAccount",
 				Name:      BookbuyerServiceAccountName,
 				Namespace: "default",
 			}},
-			Rules: []target.TrafficTargetRule{{
+			Rules: []access.TrafficTargetRule{{
+				Kind:    "HTTPRouteGroup",
+				Name:    RouteGroupName,
+				Matches: []string{BuyBooksMatchName, SellBooksMatchName},
+			}},
+		},
+	}
+
+	// BookstoreV2TrafficTarget is a traffic target SMI object for bookstore-v2.
+	BookstoreV2TrafficTarget = access.TrafficTarget{
+		TypeMeta: v1.TypeMeta{
+			APIVersion: "access.smi-spec.io/v1alpha3",
+			Kind:       "TrafficTarget",
+		},
+		ObjectMeta: v1.ObjectMeta{
+			Name:      BookstoreV2TrafficTargetName,
+			Namespace: "default",
+		},
+		Spec: access.TrafficTargetSpec{
+			Destination: access.IdentityBindingSubject{
+				Kind:      "ServiceAccount",
+				Name:      BookstoreV2ServiceAccountName,
+				Namespace: "default",
+			},
+			Sources: []access.IdentityBindingSubject{{
+				Kind:      "ServiceAccount",
+				Name:      BookbuyerServiceAccountName,
+				Namespace: "default",
+			}},
+			Rules: []access.TrafficTargetRule{{
 				Kind:    "HTTPRouteGroup",
 				Name:    RouteGroupName,
 				Matches: []string{BuyBooksMatchName, SellBooksMatchName},
@@ -293,7 +360,7 @@ var (
 	}
 
 	// RoutePolicyMap is a map of a key to a route policy SMI object.
-	RoutePolicyMap = map[trafficpolicy.TrafficSpecName]map[trafficpolicy.TrafficSpecMatchName]trafficpolicy.HTTPRoute{
+	RoutePolicyMap = map[trafficpolicy.TrafficSpecName]map[trafficpolicy.TrafficSpecMatchName]trafficpolicy.HTTPRouteMatch{
 		trafficpolicy.TrafficSpecName(fmt.Sprintf("HTTPRouteGroup/%s/%s", Namespace, RouteGroupName)): {
 			trafficpolicy.TrafficSpecMatchName(BuyBooksMatchName):  BookstoreBuyHTTPRoute,
 			trafficpolicy.TrafficSpecMatchName(SellBooksMatchName): BookstoreSellHTTPRoute,
@@ -304,6 +371,12 @@ var (
 	BookstoreServiceAccount = service.K8sServiceAccount{
 		Namespace: Namespace,
 		Name:      BookstoreServiceAccountName,
+	}
+
+	// BookstoreV2ServiceAccount is a namespaced service account.
+	BookstoreV2ServiceAccount = service.K8sServiceAccount{
+		Namespace: Namespace,
+		Name:      BookstoreV2ServiceAccountName,
 	}
 
 	// BookbuyerServiceAccount is a namespaced bookbuyer account.
@@ -335,7 +408,7 @@ var (
 	// HTTPRouteGroup is the HTTP route group SMI object.
 	HTTPRouteGroup = spec.HTTPRouteGroup{
 		TypeMeta: v1.TypeMeta{
-			APIVersion: "specs.smi-spec.io/v1alpha2",
+			APIVersion: "specs.smi-spec.io/v1alpha4",
 			Kind:       "HTTPRouteGroup",
 		},
 		ObjectMeta: v1.ObjectMeta{
@@ -374,7 +447,7 @@ var (
 	// TCPRoute is a TCPRoute SMI resource
 	TCPRoute = spec.TCPRoute{
 		TypeMeta: v1.TypeMeta{
-			APIVersion: "specs.smi-spec.io/v1alpha2",
+			APIVersion: "specs.smi-spec.io/v1alpha4",
 			Kind:       "TCPRoute",
 		},
 		ObjectMeta: v1.ObjectMeta{
@@ -384,42 +457,44 @@ var (
 		Spec: spec.TCPRouteSpec{},
 	}
 
-	// Backpressure is an experimental Backpressure policy.
-	// This will be replaced by an SMI Spec when it is ready.
-	Backpressure = backpressure.Backpressure{
-		Spec: backpressure.BackpressureSpec{
-			MaxConnections: 123,
-		},
+	// BookstoreV1DefaultWeightedCluster is a weighted cluster for bookstore-v1
+	BookstoreV1DefaultWeightedCluster = service.WeightedCluster{
+		ClusterName: "default/bookstore-v1",
+		Weight:      100,
+	}
+
+	// BookstoreV2DefaultWeightedCluster is a weighted cluster for bookstore-v2
+	BookstoreV2DefaultWeightedCluster = service.WeightedCluster{
+		ClusterName: "default/bookstore-v2",
+		Weight:      100,
+	}
+
+	// BookstoreApexDefaultWeightedCluster is a weighted cluster for bookstore-apex
+	BookstoreApexDefaultWeightedCluster = service.WeightedCluster{
+		ClusterName: "default/bookstore-apex",
+		Weight:      100,
+	}
+
+	// BookbuyerDefaultWeightedCluster is a weighted cluster for bookbuyer
+	BookbuyerDefaultWeightedCluster = service.WeightedCluster{
+		ClusterName: "default/bookbuyer",
+		Weight:      100,
+	}
+
+	// PodLabels is a map of the default labels on pods
+	PodLabels = map[string]string{
+		SelectorKey:                      SelectorValue,
+		constants.EnvoyUniqueIDLabelName: ProxyUUID,
 	}
 )
 
-// NewPodTestFixture creates a new Pod struct for testing.
-func NewPodTestFixture(namespace string, podName string) corev1.Pod {
+// NewPodFixture creates a new Pod struct for testing.
+func NewPodFixture(namespace string, podName string, serviceAccountName string, labels map[string]string) corev1.Pod {
 	return corev1.Pod{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				SelectorKey:                      SelectorValue,
-				constants.EnvoyUniqueIDLabelName: ProxyUUID,
-			},
-		},
-		Spec: corev1.PodSpec{
-			ServiceAccountName: BookstoreServiceAccountName,
-		},
-	}
-}
-
-// NewPodTestFixtureWithOptions creates a new Pod struct with options for testing.
-func NewPodTestFixtureWithOptions(namespace string, podName string, serviceAccountName string) corev1.Pod {
-	return corev1.Pod{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      podName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				SelectorKey:                      SelectorValue,
-				constants.EnvoyUniqueIDLabelName: ProxyUUID,
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: serviceAccountName,
@@ -427,7 +502,7 @@ func NewPodTestFixtureWithOptions(namespace string, podName string, serviceAccou
 	}
 }
 
-// NewServiceFixture creates a new MeshService
+// NewServiceFixture creates a new Kubernetes service
 func NewServiceFixture(serviceName, namespace string, selectors map[string]string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: v1.ObjectMeta{
@@ -447,4 +522,73 @@ func NewServiceFixture(serviceName, namespace string, selectors map[string]strin
 			Selector: selectors,
 		},
 	}
+}
+
+// NewServiceAccountFixture creates a new Kubernetes service account
+func NewServiceAccountFixture(svcAccountName, namespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      svcAccountName,
+			Namespace: namespace,
+		},
+	}
+}
+
+// NewMeshServiceFixture creates a new mesh service
+func NewMeshServiceFixture(serviceName, namespace string) service.MeshService {
+	return service.MeshService{
+		Name:      serviceName,
+		Namespace: namespace,
+	}
+}
+
+// NewSMITrafficTarget creates a new SMI Traffic Target
+func NewSMITrafficTarget(sourceName, sourceNamespace, destName, destNamespace string) access.TrafficTarget {
+	return access.TrafficTarget{
+		TypeMeta: v1.TypeMeta{
+			APIVersion: "access.smi-spec.io/v1alpha3",
+			Kind:       "TrafficTarget",
+		},
+		ObjectMeta: v1.ObjectMeta{
+			Name:      destName,
+			Namespace: destNamespace,
+		},
+		Spec: access.TrafficTargetSpec{
+			Destination: access.IdentityBindingSubject{
+				Kind:      "ServiceAccount",
+				Name:      destName,
+				Namespace: destNamespace,
+			},
+			Sources: []access.IdentityBindingSubject{{
+				Kind:      "ServiceAccount",
+				Name:      sourceName,
+				Namespace: sourceNamespace,
+			}},
+			Rules: []access.TrafficTargetRule{{
+				Kind:    "HTTPRouteGroup",
+				Name:    RouteGroupName,
+				Matches: []string{BuyBooksMatchName, SellBooksMatchName},
+			}},
+		},
+	}
+}
+
+// GetPEMCert returns a TEST certificate used ONLY for testing
+func GetPEMCert() (tresorPem.Certificate, error) {
+	caBlock, _ := pem.Decode([]byte(certificates.SampleCertificatePEM))
+	if caBlock == nil || caBlock.Type != "CERTIFICATE" {
+		return nil, ErrDecodingPEMBlock
+	}
+
+	return pem.EncodeToMemory(caBlock), nil
+}
+
+// GetPEMPrivateKey returns a TEST private key used ONLY for testing
+func GetPEMPrivateKey() (tresorPem.PrivateKey, error) {
+	caKeyBlock, _ := pem.Decode([]byte(certificates.SamplePrivateKeyPEM))
+	if caKeyBlock == nil || caKeyBlock.Type != "PRIVATE KEY" {
+		return nil, ErrDecodingPEMBlock
+	}
+
+	return pem.EncodeToMemory(caKeyBlock), nil
 }

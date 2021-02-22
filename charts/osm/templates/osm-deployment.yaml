@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: osm-controller
+  namespace: {{ include "osm.namespace" . }}
   labels:
     app: osm-controller
     meshName: {{ .Values.OpenServiceMesh.meshName }}
@@ -15,6 +16,9 @@ spec:
     metadata:
       labels:
         app: osm-controller
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '9091'
     spec:
       serviceAccountName: {{ .Release.Name }}
       containers:
@@ -26,17 +30,17 @@ spec:
               containerPort: 15000
             - name: "osm-port"
               containerPort: 15128
+            - name: "metrics"
+              containerPort: 9091
           command: ['/osm-controller']
           args: [
             "--verbosity", "{{.Values.OpenServiceMesh.controllerLogLevel}}",
-            "--osm-namespace", "{{.Release.Namespace}}",
+            "--osm-namespace", "{{ include "osm.namespace" . }}",
             "--mesh-name", "{{.Values.OpenServiceMesh.meshName}}",
-            "--init-container-image", "{{.Values.OpenServiceMesh.image.registry}}/init:{{ .Values.OpenServiceMesh.image.tag }}",
-            "--sidecar-image", "{{.Values.OpenServiceMesh.sidecarImage}}",
             "--webhook-config-name", "{{.Values.OpenServiceMesh.webhookConfigNamePrefix}}-{{.Values.OpenServiceMesh.meshName}}",
             "--ca-bundle-secret-name", "{{.Values.OpenServiceMesh.caBundleSecretName}}",
             "--certificate-manager", "{{.Values.OpenServiceMesh.certificateManager}}",
-            {{- if .Values.OpenServiceMesh.connectVault }}
+            {{ if eq .Values.OpenServiceMesh.certificateManager "vault" }}
             "--vault-host", "{{.Values.OpenServiceMesh.vault.host}}",
             "--vault-protocol", "{{.Values.OpenServiceMesh.vault.protocol}}",
             "--vault-token", "{{.Values.OpenServiceMesh.vault.token}}",
@@ -44,17 +48,17 @@ spec:
             "--cert-manager-issuer-name", "{{.Values.OpenServiceMesh.certmanager.issuerName}}",
             "--cert-manager-issuer-kind", "{{.Values.OpenServiceMesh.certmanager.issuerKind}}",
             "--cert-manager-issuer-group", "{{.Values.OpenServiceMesh.certmanager.issuerGroup}}",
-            {{- if .Values.OpenServiceMesh.enableBackpressureExperimental }}
-            "--enable-backpressure-experimental",
+            {{- if .Values.OpenServiceMesh.enableRoutesV2Experimental }}
+            "--enable-routes-v2-experimental",
             {{- end }}
           ]
           resources:
             limits:
-              cpu: 1.5
-              memory: 256M
+              cpu: "{{.Values.OpenServiceMesh.osmcontroller.resource.limits.cpu}}"
+              memory: "{{.Values.OpenServiceMesh.osmcontroller.resource.limits.memory}}"
             requests:
-              cpu: 0.5
-              memory: 32M
+              cpu: "{{.Values.OpenServiceMesh.osmcontroller.resource.requests.cpu}}"
+              memory: "{{.Values.OpenServiceMesh.osmcontroller.resource.requests.memory}}"
           readinessProbe:
             initialDelaySeconds: 1
             timeoutSeconds: 5
@@ -76,9 +80,27 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
       {{- if .Values.OpenServiceMesh.enableFluentbit }}
-        - name: {{ .Values.OpenServiceMesh.fluentBitImage.name }}
-          image: {{ .Values.OpenServiceMesh.fluentBitImage.registry }}/fluent-bit:{{ .Values.OpenServiceMesh.fluentBitImage.tag }}
-          imagePullPolicy: {{ .Values.OpenServiceMesh.fluentBitImage.pullPolicy }}
+        - name: {{ .Values.OpenServiceMesh.fluentBit.name }}
+          image: {{ .Values.OpenServiceMesh.fluentBit.registry }}/fluent-bit:{{ .Values.OpenServiceMesh.fluentBit.tag }}
+          imagePullPolicy: {{ .Values.OpenServiceMesh.fluentBit.pullPolicy }}
+          env:
+          {{- if .Values.OpenServiceMesh.fluentBit.enableProxySupport }}
+          - name: HTTP_PROXY
+            valueFrom:
+              secretKeyRef:
+                name: proxy-config
+                key: HTTP_PROXY
+          - name: HTTPS_PROXY
+            valueFrom:
+              secretKeyRef:
+                name: proxy-config
+                key: HTTPS_PROXY
+          {{- end }}
+          - name: CONTROLLER_POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
           volumeMounts:
           - name: config
             mountPath: /fluent-bit/etc

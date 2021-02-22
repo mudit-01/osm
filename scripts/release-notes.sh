@@ -18,9 +18,20 @@ tags=$(git -c 'versionsort.suffix=-alpha,-beta,-rc' tag -l --sort=version:refnam
 ! [[ "$tag" =~ -(alpha|beta|rc) ]] && tags=$(grep -Eve '-(alpha|beta|rc)' <<< "$tags")
 prev=$(tail -2 <<< "$tags" | head -1)
 
-changelog=$(git log "$prev".."$tag" --format="* %s %H (%aN)")
+changelog=$(git log "$prev".."$tag" --no-merges --format="* %s %H (%aN)")
+
+# Determine if any CRDs were updated between tags
+# CRD upgrades require manually deleting prior CRDs before upgrading Helm chart
+crd_changes=$(git diff --name-only "$prev".."$tag" -- charts/osm/crds)
+if [[ -z "$crd_changes" ]]; then
+   crd_changes="No CRD changes between tags ${prev} and ${tag}"
+fi
 
 cat <<EOF
+## CRD Updates
+
+$crd_changes
+
 ## Changelog
 
 $changelog

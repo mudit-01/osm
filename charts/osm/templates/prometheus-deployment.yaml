@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: osm-prometheus
+  namespace: {{ include "osm.namespace" . }}
 spec:
   replicas: 1
   strategy:
@@ -29,7 +30,7 @@ spec:
         resources:
           limits:
             cpu: 500m
-            memory: 512M
+            memory: 2G
           requests:
             cpu: 100m
             memory: 256M

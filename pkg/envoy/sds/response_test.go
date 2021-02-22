@@ -7,7 +7,7 @@ import (
 	xds_matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
+	tassert "github.com/stretchr/testify/assert"
 
 	"github.com/openservicemesh/osm/pkg/catalog"
 	"github.com/openservicemesh/osm/pkg/certificate"
@@ -17,7 +17,7 @@ import (
 )
 
 func TestGetRootCert(t *testing.T) {
-	assert := assert.New(t)
+	assert := tassert.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -132,10 +132,12 @@ func TestGetRootCert(t *testing.T) {
 				tc.prepare(&d)
 			}
 
+			certCommonName := certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New().String(), "sa-1", "ns-1"))
+			certSerialNumber := certificate.SerialNumber("123456")
 			s := &sdsImpl{
 				proxyServices: []service.MeshService{tc.proxyService},
 				svcAccount:    tc.proxySvcAccount,
-				proxy:         envoy.NewProxy(certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New().String(), "sa-1", "ns-1")), nil),
+				proxy:         envoy.NewProxy(certCommonName, certSerialNumber, nil),
 				certManager:   mockCertManager,
 
 				// these points to the dynamic mocks which gets updated for each test
@@ -154,7 +156,7 @@ func TestGetRootCert(t *testing.T) {
 }
 
 func TestGetServiceCert(t *testing.T) {
-	assert := assert.New(t)
+	assert := tassert.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -187,7 +189,7 @@ func TestGetServiceCert(t *testing.T) {
 }
 
 func TestGetSDSSecrets(t *testing.T) {
-	assert := assert.New(t)
+	assert := tassert.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -345,10 +347,12 @@ func TestGetSDSSecrets(t *testing.T) {
 				tc.prepare(&d)
 			}
 
+			certCommonName := certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New().String(), "sa-1", "ns-1"))
+			certSerialNumber := certificate.SerialNumber("123456")
 			s := &sdsImpl{
 				proxyServices: []service.MeshService{tc.proxyService},
 				svcAccount:    tc.proxySvcAccount,
-				proxy:         envoy.NewProxy(certificate.CommonName(fmt.Sprintf("%s.%s.%s", uuid.New().String(), "sa-1", "ns-1")), nil),
+				proxy:         envoy.NewProxy(certCommonName, certSerialNumber, nil),
 				certManager:   mockCertManager,
 
 				// these points to the dynamic mocks which gets updated for each test
@@ -370,11 +374,7 @@ func TestGetSDSSecrets(t *testing.T) {
 			// verify different cert types
 			switch tc.sdsCertType {
 			// Verify SAN for inbound and outbound MTLS certs
-			case envoy.RootCertTypeForMTLSInbound:
-				fallthrough
-			case envoy.RootCertTypeForMTLSOutbound:
-				fallthrough
-			case envoy.RootCertTypeForHTTPS:
+			case envoy.RootCertTypeForMTLSInbound, envoy.RootCertTypeForMTLSOutbound, envoy.RootCertTypeForHTTPS:
 				// Check SANs
 				actualSANs := subjectAltNamesToStr(sdsSecret.GetValidationContext().GetMatchSubjectAltNames())
 				assert.ElementsMatch(actualSANs, tc.expectedSANs)
@@ -391,7 +391,7 @@ func TestGetSDSSecrets(t *testing.T) {
 }
 
 func TestGetSubjectAltNamesFromSvcAccount(t *testing.T) {
-	assert := assert.New(t)
+	assert := tassert.New(t)
 
 	testCases := []struct {
 		svcAccounts         []service.K8sServiceAccount
@@ -426,7 +426,7 @@ func TestGetSubjectAltNamesFromSvcAccount(t *testing.T) {
 }
 
 func TestSubjectAltNamesToStr(t *testing.T) {
-	assert := assert.New(t)
+	assert := tassert.New(t)
 
 	testCases := []struct {
 		sanMatchers []*xds_matcher.StringMatcher

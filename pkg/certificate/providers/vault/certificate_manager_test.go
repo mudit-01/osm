@@ -4,10 +4,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/hashicorp/vault/api"
 
 	"github.com/openservicemesh/osm/pkg/certificate"
@@ -26,29 +27,32 @@ var _ = Describe("Test client helpers", func() {
 
 	expiredCertCN := certificate.CommonName("this.has.expired")
 	expiredCert := &Certificate{
-		issuingCA:  pem.RootCertificate("zz"),
-		privateKey: pem.PrivateKey("yy"),
-		certChain:  pem.Certificate("xx"),
-		expiration: time.Now(), // This certificate has ALREADY expired
-		commonName: expiredCertCN,
+		issuingCA:    pem.RootCertificate("zz"),
+		privateKey:   pem.PrivateKey("yy"),
+		certChain:    pem.Certificate("xx"),
+		expiration:   time.Now(), // This certificate has ALREADY expired
+		commonName:   expiredCertCN,
+		serialNumber: "-serial-number-",
 	}
 
 	validCertCN := certificate.CommonName("valid.certificate")
 	validCert := &Certificate{
-		issuingCA:  issuingCA,
-		privateKey: pem.PrivateKey("yy"),
-		certChain:  pem.Certificate("xx"),
-		expiration: time.Now().Add(24 * time.Hour),
-		commonName: validCertCN,
+		issuingCA:    issuingCA,
+		privateKey:   pem.PrivateKey("yy"),
+		certChain:    pem.Certificate("xx"),
+		expiration:   time.Now().Add(24 * time.Hour),
+		commonName:   validCertCN,
+		serialNumber: "-serial-number-",
 	}
 
 	rootCertCN := certificate.CommonName("root.cert")
 	rootCert := &Certificate{
-		issuingCA:  pem.RootCertificate("zz"),
-		privateKey: pem.PrivateKey("yy"),
-		certChain:  pem.Certificate("xx"),
-		expiration: time.Now().Add(24 * time.Hour),
-		commonName: rootCertCN,
+		issuingCA:    pem.RootCertificate("zz"),
+		privateKey:   pem.PrivateKey("yy"),
+		certChain:    pem.Certificate("xx"),
+		expiration:   time.Now().Add(24 * time.Hour),
+		commonName:   rootCertCN,
+		serialNumber: "-serial-number-",
 	}
 
 	Context("Test NewCertManager()", func() {
@@ -105,6 +109,41 @@ var _ = Describe("Test client helpers", func() {
 		}
 		cm.cache.Store(expiredCertCN, expiredCert)
 		cm.cache.Store(validCertCN, validCert)
+
+		getCachedCertificateCNs := func() []certificate.CommonName {
+			var commonNames []certificate.CommonName
+			cm.cache.Range(func(cnInterface interface{}, certInterface interface{}) bool {
+				cert := certInterface.(*Certificate)
+				commonNames = append(commonNames, cert.GetCommonName())
+				return true // continue the iteration
+			})
+			return commonNames
+		}
+
+		It("gets issuing CA public part", func() {
+			certSerialNum := certificate.SerialNumber(uuid.New().String())
+			expectedNumberOfCertsInCache := 2
+			Expect(len(getCachedCertificateCNs())).To(Equal(expectedNumberOfCertsInCache))
+			Expect(getCachedCertificateCNs()).To(ContainElement(certificate.CommonName("this.has.expired")))
+			Expect(getCachedCertificateCNs()).To(ContainElement(certificate.CommonName("valid.certificate")))
+			certBytes := uuid.New().String()
+			issue := func(certificate.CommonName, time.Duration) (certificate.Certificater, error) {
+				cert := Certificate{
+					issuingCA:    pem.RootCertificate(certBytes),
+					serialNumber: certSerialNum,
+				}
+				return cert, nil
+			}
+			issuingCA, serialNumber, err := cm.getIssuingCA(issue)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Ensure that cache is NOT affected
+			Expect(issuingCA).To(Equal([]byte(certBytes)))
+			Expect(len(getCachedCertificateCNs())).To(Equal(expectedNumberOfCertsInCache))
+			Expect(getCachedCertificateCNs()).To(ContainElement(certificate.CommonName("this.has.expired")))
+			Expect(getCachedCertificateCNs()).To(ContainElement(certificate.CommonName("valid.certificate")))
+			Expect(serialNumber).To(Equal(certSerialNum))
+		})
 
 		It("gets certs from cache", func() {
 			// This cert does not exist - returns nil
