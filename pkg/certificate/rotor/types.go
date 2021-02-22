@@ -1,4 +1,3 @@
-// Package rotor implements functionality to rotate certificates provided by a certificate provider.
 package rotor
 
 import (

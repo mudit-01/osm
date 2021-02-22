@@ -50,6 +50,7 @@ var (
 
 	maxPodWaitString = utils.GetEnv(maestro.WaitForPodTimeSecondsEnvVar, "30")
 	maxOKWaitString  = utils.GetEnv(maestro.WaitForOKSecondsEnvVar, "30")
+	meshName         = osmNamespace
 
 	// Mesh namespaces
 	namespaces = []string{
@@ -61,7 +62,7 @@ var (
 )
 
 func main() {
-	log.Debug().Msgf("Looking for: %s/%s, %s/%s, %s/%s, %s/%s, %s/%s", bookBuyerLabel, bookbuyerNS, bookThiefLabel, bookthiefNS, bookstoreV1Label, bookstoreNS, bookstoreV2Label, bookstoreNS, bookWarehouseLabel, bookWarehouseNS)
+	log.Info().Msgf("Looking for: %s/%s, %s/%s, %s/%s, %s/%s, %s/%s", bookBuyerLabel, bookbuyerNS, bookThiefLabel, bookthiefNS, bookstoreV1Label, bookstoreNS, bookstoreV2Label, bookstoreNS, bookWarehouseLabel, bookWarehouseNS)
 
 	kubeClient := maestro.GetKubernetesClient()
 
@@ -82,8 +83,7 @@ func main() {
 	}
 
 	if allTestsResults.Equal(maestro.TestsPassed) {
-		log.Debug().Msg("Test succeeded")
-		maestro.DeleteNamespaces(kubeClient, append(namespaces, osmNamespace)...)
+		cleanUp(kubeClient)
 		os.Exit(0) // Tests passed!  WE ARE DONE !!!
 	}
 
@@ -188,6 +188,13 @@ func getPodNames(kubeClient kubernetes.Interface) (string, string, string, strin
 	}
 
 	return bookBuyerPodName, bookThiefPodName, bookWarehousePodName, osmControllerPodName
+}
+
+func cleanUp(kubeClient *kubernetes.Clientset) {
+	log.Info().Msg("Test succeeded")
+	maestro.DeleteNamespaces(kubeClient, append(namespaces, osmNamespace)...)
+	webhookConfigName := fmt.Sprintf("osm-webhook-%s", meshName)
+	maestro.DeleteWebhookConfiguration(kubeClient, webhookConfigName)
 }
 
 func printLogsForInitContainers(kubeClient kubernetes.Interface, pod v1.Pod) {

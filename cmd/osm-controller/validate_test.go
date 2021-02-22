@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/openservicemesh/osm/pkg/certificate/providers"
+	"github.com/openservicemesh/osm/pkg/injector"
 )
 
 var _ = Describe("Test validateCertificateManagerOptions", func() {
@@ -12,8 +12,8 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 		testCaBundleSecretName = "test-secret"
 	)
 
-	Context("tresor certProviderKind is passed in", func() {
-		certProviderKind = providers.TresorKind.String()
+	Context("tresor osmCertificateManagerKind is passed in", func() {
+		*osmCertificateManagerKind = tresorKind
 
 		err := validateCertificateManagerOptions()
 
@@ -21,9 +21,9 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 			Expect(err).To(BeNil())
 		})
 	})
-	Context("vault certProviderKind is passed in and vaultToken is not empty", func() {
-		certProviderKind = providers.VaultKind.String()
-		vaultOptions.VaultToken = "anythinghere"
+	Context("vault osmCertificateManagerKind is passed in and vaultToken is not empty", func() {
+		*osmCertificateManagerKind = vaultKind
+		*vaultToken = "anythinghere"
 
 		err := validateCertificateManagerOptions()
 
@@ -31,9 +31,9 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 			Expect(err).To(BeNil())
 		})
 	})
-	Context("vault certProviderKind is passed in but vaultToken is empty", func() {
-		certProviderKind = providers.VaultKind.String()
-		vaultOptions.VaultToken = ""
+	Context("vault osmCertificateManagerKind is passed in but vaultToken is empty", func() {
+		*osmCertificateManagerKind = vaultKind
+		*vaultToken = ""
 
 		err := validateCertificateManagerOptions()
 
@@ -42,10 +42,10 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 
 		})
 	})
-	Context("cert-manager certProviderKind is passed in with valid caBundleSecretName and certmanagerIssuerName", func() {
-		certProviderKind = providers.CertManagerKind.String()
+	Context("cert-manager osmCertificateManagerKind is passed in with valid caBundleSecretName and certmanagerIssureName", func() {
+		*osmCertificateManagerKind = certmanagerKind
 		caBundleSecretName = testCaBundleSecretName
-		certManagerOptions.IssuerName = "test-issuer"
+		*certmanagerIssuerName = "test-issuer"
 
 		err := validateCertificateManagerOptions()
 
@@ -53,10 +53,10 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 			Expect(err).To(BeNil())
 		})
 	})
-	Context("cert-manager certProviderKind is passed in with caBundleSecretName but no certmanagerIssureName", func() {
-		certProviderKind = providers.CertManagerKind.String()
+	Context("cert-manager osmCertificateManagerKind is passed in with caBundleSecretName but no certmanagerIssureName", func() {
+		*osmCertificateManagerKind = certmanagerKind
 		caBundleSecretName = testCaBundleSecretName
-		certManagerOptions.IssuerName = ""
+		*certmanagerIssuerName = ""
 
 		err := validateCertificateManagerOptions()
 
@@ -64,10 +64,10 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
-	Context("cert-manager certProviderKind is passed in without caBundleSecretName but no certmanagerIssureName", func() {
-		certProviderKind = providers.CertManagerKind.String()
+	Context("cert-manager osmCertificateManagerKind is passed in without caBundleSecretName but no certmanagerIssureName", func() {
+		*osmCertificateManagerKind = certmanagerKind
 		caBundleSecretName = ""
-		certManagerOptions.IssuerName = ""
+		*certmanagerIssuerName = ""
 
 		err := validateCertificateManagerOptions()
 
@@ -75,9 +75,19 @@ var _ = Describe("Test validateCertificateManagerOptions", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
+	Context("cert-manager osmCertificateManagerKind is passed in with certmanagerIssureName but without caBundleSecretName ", func() {
+		*osmCertificateManagerKind = certmanagerKind
+		caBundleSecretName = ""
+		*certmanagerIssuerName = "test-issuer"
 
+		err := validateCertificateManagerOptions()
+
+		It("should error", func() {
+			Expect(err).To(HaveOccurred())
+		})
+	})
 	Context("invalid kind is passed in", func() {
-		certProviderKind = "invalidkind"
+		*osmCertificateManagerKind = "invalidkind"
 
 		err := validateCertificateManagerOptions()
 
@@ -91,16 +101,20 @@ var _ = Describe("Test validateCLIParams", func() {
 	var (
 		testMeshName           = "test-mesh-name"
 		testOsmNamespace       = "test-namespace"
+		testInitContainerImage = "test-init-image"
+		testSidecarImage       = "test-sidecar-image"
 		testwebhookConfigName  = "test-webhook-name"
-		testCABundleSecretName = "test-ca-bundle"
 	)
 
 	Context("none of the necessary CLI params are empty", func() {
-		certProviderKind = providers.TresorKind.String()
+		*osmCertificateManagerKind = tresorKind
 		meshName = testMeshName
 		osmNamespace = testOsmNamespace
+		injectorConfig = injector.Config{
+			InitContainerImage: testInitContainerImage,
+			SidecarImage:       testSidecarImage,
+		}
 		webhookConfigName = testwebhookConfigName
-		caBundleSecretName = testCABundleSecretName
 
 		err := validateCLIParams()
 
@@ -109,9 +123,13 @@ var _ = Describe("Test validateCLIParams", func() {
 		})
 	})
 	Context("mesh name is empty", func() {
-		certProviderKind = providers.TresorKind.String()
+		*osmCertificateManagerKind = tresorKind
 		meshName = ""
 		osmNamespace = testOsmNamespace
+		injectorConfig = injector.Config{
+			InitContainerImage: testInitContainerImage,
+			SidecarImage:       testSidecarImage,
+		}
 		webhookConfigName = testwebhookConfigName
 
 		err := validateCLIParams()
@@ -121,9 +139,45 @@ var _ = Describe("Test validateCLIParams", func() {
 		})
 	})
 	Context("osmNamespace is empty", func() {
-		certProviderKind = providers.TresorKind.String()
+		*osmCertificateManagerKind = tresorKind
 		meshName = testMeshName
 		osmNamespace = ""
+		injectorConfig = injector.Config{
+			InitContainerImage: testInitContainerImage,
+			SidecarImage:       testSidecarImage,
+		}
+		webhookConfigName = testwebhookConfigName
+
+		err := validateCLIParams()
+
+		It("should error", func() {
+			Expect(err).To(HaveOccurred())
+		})
+	})
+	Context("InitContainerImage on injectorConfig is empty", func() {
+		*osmCertificateManagerKind = tresorKind
+		meshName = testMeshName
+		osmNamespace = testOsmNamespace
+		injectorConfig = injector.Config{
+			InitContainerImage: "",
+			SidecarImage:       testSidecarImage,
+		}
+		webhookConfigName = testwebhookConfigName
+
+		err := validateCLIParams()
+
+		It("should error", func() {
+			Expect(err).To(HaveOccurred())
+		})
+	})
+	Context("SidecarImage on injectorConfig is empty", func() {
+		*osmCertificateManagerKind = tresorKind
+		meshName = testMeshName
+		osmNamespace = testOsmNamespace
+		injectorConfig = injector.Config{
+			InitContainerImage: testInitContainerImage,
+			SidecarImage:       "",
+		}
 		webhookConfigName = testwebhookConfigName
 
 		err := validateCLIParams()
@@ -133,9 +187,13 @@ var _ = Describe("Test validateCLIParams", func() {
 		})
 	})
 	Context("webhookConfigName is empty", func() {
-		certProviderKind = providers.TresorKind.String()
+		*osmCertificateManagerKind = tresorKind
 		meshName = testMeshName
 		osmNamespace = testOsmNamespace
+		injectorConfig = injector.Config{
+			InitContainerImage: testInitContainerImage,
+			SidecarImage:       testSidecarImage,
+		}
 		webhookConfigName = ""
 
 		err := validateCLIParams()

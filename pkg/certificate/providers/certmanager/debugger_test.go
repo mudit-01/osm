@@ -13,12 +13,11 @@ import (
 var _ = Describe("Test cert-manager Debugger", func() {
 	Context("test ListIssuedCertificates()", func() {
 		cert := &Certificate{
-			issuingCA:    pem.RootCertificate("zz"),
-			privateKey:   pem.PrivateKey("yy"),
-			certChain:    pem.Certificate("xx"),
-			expiration:   time.Now(),
-			commonName:   "foo.bar.co.uk",
-			serialNumber: "-certificate-serial-number-",
+			issuingCA:  pem.RootCertificate("zz"),
+			privateKey: pem.PrivateKey("yy"),
+			certChain:  pem.Certificate("xx"),
+			expiration: time.Now(),
+			commonName: "foo.bar.co.uk",
 		}
 		cache := map[certificate.CommonName]certificate.Certificater{
 			"foo": cert,
@@ -26,7 +25,7 @@ var _ = Describe("Test cert-manager Debugger", func() {
 		cm := CertManager{
 			cache: cache,
 		}
-		It("lists all issued certificates", func() {
+		It("lists all issued certificets", func() {
 			actual := cm.ListIssuedCertificates()
 			expected := []certificate.Certificater{cert}
 			Expect(actual).To(Equal(expected))

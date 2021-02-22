@@ -27,27 +27,7 @@ func recordCall(ts *httptest.Server, path string) *http.Response {
 	return w.Result()
 }
 
-var _ = Describe("test health probe helpers", func() {
-	It("probes", func() {
-		p := HTTPProbe{
-			URL:      "http://localhost/a/b/c",
-			Protocol: ProtocolHTTP,
-		}
-		actualResponseCode, err := p.Probe()
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring(`refused`))
-		Expect(actualResponseCode).To(Equal(503))
-	})
-
-	It("sets probe response", func() {
-		w := httptest.NewRecorder()
-		setProbeResponse(w, 987, "-the-message-")
-		Expect(w.Body.String()).To(Equal("-the-message-"))
-		Expect(w.Code).To(Equal(987))
-	})
-})
-
-var _ = Describe("Test httpserver with probes", func() {
+var _ = Describe("Test httpserver", func() {
 	var (
 		mockCtrl   *gomock.Controller
 		mockProbe  *MockProbes
@@ -84,15 +64,6 @@ var _ = Describe("Test httpserver with probes", func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 	})
 
-	It("ignores this probe", func() {
-		mockProbe.EXPECT().Readiness().Return(false).Times(1)
-		mockProbe.EXPECT().GetID().Return("test").Times(1)
-
-		resp := recordCall(testServer, fmt.Sprintf("%s%s", url, readyPath))
-
-		Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
-	})
-
 	It("should result in a successful liveness probe", func() {
 		mockProbe.EXPECT().Liveness().Return(true).Times(1)
 		mockProbe.EXPECT().GetID().Return("test").Times(1)
@@ -100,14 +71,5 @@ var _ = Describe("Test httpserver with probes", func() {
 		resp := recordCall(testServer, fmt.Sprintf("%s%s", url, alivePath))
 
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-	})
-
-	It("skips this probe", func() {
-		mockProbe.EXPECT().Liveness().Return(false).Times(1)
-		mockProbe.EXPECT().GetID().Return("test").Times(1)
-
-		resp := recordCall(testServer, fmt.Sprintf("%s%s", url, alivePath))
-
-		Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })

@@ -23,6 +23,7 @@ func NewIngressClient(kubeClient kubernetes.Interface, kubeController k8s.Contro
 		informer:       informer,
 		cache:          informer.GetStore(),
 		cacheSynced:    make(chan interface{}),
+		announcements:  make(chan announcements.Announcement),
 		kubeController: kubeController,
 	}
 
@@ -36,7 +37,7 @@ func NewIngressClient(kubeClient kubernetes.Interface, kubeController k8s.Contro
 		Update: announcements.IngressUpdated,
 		Delete: announcements.IngressDeleted,
 	}
-	informer.AddEventHandler(k8s.GetKubernetesEventHandlers("Ingress", "Kubernetes", shouldObserve, ingrEventTypes))
+	informer.AddEventHandler(k8s.GetKubernetesEventHandlers("Ingress", "Kubernetes", client.announcements, shouldObserve, nil, ingrEventTypes))
 
 	if err := client.run(stop); err != nil {
 		log.Error().Err(err).Msg("Could not start Kubernetes Ingress client")
@@ -65,6 +66,11 @@ func (c *Client) run(stop <-chan struct{}) error {
 
 	log.Info().Msgf("Cache sync finished for Ingress informer")
 	return nil
+}
+
+// GetAnnouncementsChannel returns the announcement channel for the Ingress client
+func (c Client) GetAnnouncementsChannel() <-chan announcements.Announcement {
+	return c.announcements
 }
 
 // GetIngressResources returns the ingress resources whose backends correspond to the service

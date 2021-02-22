@@ -8,12 +8,10 @@ webhooks:
 - name: osm-inject.k8s.io
   clientConfig:
     service:
-      name: osm-injector
-      namespace: {{ include "osm.namespace" . }}
+      name: osm-controller
+      namespace: {{.Release.Namespace}}
       path: /mutate-pod-creation
-      port: 9090
-  # failurePolicy should always be set to Fail to ensure no new resources get created without a sidecar
-  #   (and bypass TrafficTarget policies) if the webhook server is down
+      port: 443
   failurePolicy: Fail
   matchPolicy: Exact
   namespaceSelector:
@@ -29,7 +27,7 @@ webhooks:
       - key: "name"
         operator: NotIn
         values:
-        - {{ include "osm.namespace" . }}
+        - {{.Release.Namespace}}
   rules:
     - apiGroups:
         - ""

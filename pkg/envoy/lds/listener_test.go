@@ -1,6 +1,7 @@
 package lds
 
 import (
+	"net"
 	"testing"
 
 	xds_core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -9,32 +10,31 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 
+	"github.com/openservicemesh/osm/pkg/catalog"
 	"github.com/openservicemesh/osm/pkg/configurator"
 	"github.com/openservicemesh/osm/pkg/constants"
+	"github.com/openservicemesh/osm/pkg/endpoint"
 	"github.com/openservicemesh/osm/pkg/envoy"
 	"github.com/openservicemesh/osm/pkg/envoy/route"
-	"github.com/openservicemesh/osm/pkg/featureflags"
+	"github.com/openservicemesh/osm/pkg/tests"
 )
 
 // Tests TestGetFilterForService checks that a proper filter type is properly returned
-// for given config parameters and service
+// for given config parametres and service
 func TestGetFilterForService(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 	mockCtrl := gomock.NewController(t)
 
 	mockConfigurator := configurator.NewMockConfigurator(mockCtrl)
-	lb := &listenerBuilder{
-		cfg: mockConfigurator,
-	}
 
 	mockConfigurator.EXPECT().IsPermissiveTrafficPolicyMode().Return(false)
 	mockConfigurator.EXPECT().IsTracingEnabled().Return(true)
 	mockConfigurator.EXPECT().GetTracingEndpoint().Return("test-endpoint")
 
 	// Check we get HTTP connection manager filter without Permissive mode
-	filter, err := lb.getOutboundHTTPFilter()
+	filter, err := getOutboundFilterForService(tests.BookbuyerService, mockConfigurator)
 
 	assert.NoError(err)
 	assert.Equal(filter.Name, wellknown.HTTPConnectionManager)
@@ -44,9 +44,48 @@ func TestGetFilterForService(t *testing.T) {
 	mockConfigurator.EXPECT().IsTracingEnabled().Return(true)
 	mockConfigurator.EXPECT().GetTracingEndpoint().Return("test-endpoint")
 
-	filter, err = lb.getOutboundHTTPFilter()
+	filter, err = getOutboundFilterForService(tests.BookbuyerService, mockConfigurator)
 	assert.NoError(err)
 	assert.Equal(filter.Name, wellknown.HTTPConnectionManager)
+}
+
+// Tests TestGetFilterChainMatchForService checks that a proper filter chain match is returned
+// for a given service
+func TestGetFilterChainMatchForService(t *testing.T) {
+	assert := assert.New(t)
+	mockCtrl := gomock.NewController(t)
+
+	mockConfigurator := configurator.NewMockConfigurator(mockCtrl)
+	mockCatalog := catalog.NewMockMeshCataloger(mockCtrl)
+
+	mockCatalog.EXPECT().GetResolvableServiceEndpoints(tests.BookbuyerService).Return(
+		[]endpoint.Endpoint{
+			tests.Endpoint,
+			{
+				// Adding another IP to test multiple-endpoint filter chain
+				IP: net.IPv4(192, 168, 0, 1),
+			},
+		},
+		nil,
+	)
+
+	filterChainMatch, err := getOutboundFilterChainMatchForService(tests.BookbuyerService, mockCatalog, mockConfigurator)
+
+	assert.NoError(err)
+	assert.Equal(filterChainMatch.PrefixRanges[0].GetAddressPrefix(), tests.Endpoint.IP.String())
+	assert.Equal(filterChainMatch.PrefixRanges[0].GetPrefixLen().GetValue(), uint32(32))
+	assert.Equal(filterChainMatch.PrefixRanges[1].GetAddressPrefix(), net.IPv4(192, 168, 0, 1).String())
+	assert.Equal(filterChainMatch.PrefixRanges[1].GetPrefixLen().GetValue(), uint32(32))
+
+	// Test negative getOutboundFilterChainMatchForService when no endpoints are present
+	mockCatalog.EXPECT().GetResolvableServiceEndpoints(tests.BookbuyerService).Return(
+		[]endpoint.Endpoint{},
+		nil,
+	)
+
+	filterChainMatch, err = getOutboundFilterChainMatchForService(tests.BookbuyerService, mockCatalog, mockConfigurator)
+	assert.NoError(err)
+	assert.Nil(filterChainMatch)
 }
 
 var _ = Describe("Construct inbound listeners", func() {
@@ -66,7 +105,7 @@ var _ = Describe("Construct inbound listeners", func() {
 		It("Tests the inbound listener config", func() {
 			listener := newInboundListener()
 			Expect(listener.Address).To(Equal(envoy.GetAddress(constants.WildcardIPAddr, constants.EnvoyInboundListenerPort)))
-			Expect(len(listener.ListenerFilters)).To(Equal(2)) // TlsInspector, OriginalDestination listener filter
+			Expect(len(listener.ListenerFilters)).To(Equal(1)) // tls-inspector listener filter
 			Expect(listener.ListenerFilters[0].Name).To(Equal(wellknown.TlsInspector))
 			Expect(listener.TrafficDirection).To(Equal(xds_core.TrafficDirection_INBOUND))
 		})
@@ -99,7 +138,7 @@ var _ = Describe("Test getHTTPConnectionManager", func() {
 			mockConfigurator.EXPECT().GetTracingEndpoint().Return(constants.DefaultTracingEndpoint).Times(1)
 			mockConfigurator.EXPECT().IsTracingEnabled().Return(true).Times(1)
 
-			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator, nil)
+			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator)
 
 			Expect(connManager.Tracing.Verbose).To(Equal(true))
 			Expect(connManager.Tracing.Provider.Name).To(Equal("envoy.tracers.zipkin"))
@@ -108,51 +147,10 @@ var _ = Describe("Test getHTTPConnectionManager", func() {
 		It("Returns proper Zipkin config given when tracing is disabled", func() {
 			mockConfigurator.EXPECT().IsTracingEnabled().Return(false).Times(1)
 
-			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator, nil)
+			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator)
 			var nilHcmTrace *xds_hcm.HttpConnectionManager_Tracing = nil
 
 			Expect(connManager.Tracing).To(Equal(nilHcmTrace))
-		})
-
-		It("Returns no stats config when WASM is disabled", func() {
-			mockConfigurator.EXPECT().IsTracingEnabled().AnyTimes()
-			oldWASMflag := featureflags.Features.WASMStats
-			featureflags.Features.WASMStats = false
-
-			oldStatsWASMBytes := statsWASMBytes
-			statsWASMBytes = "some bytes"
-
-			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator, map[string]string{"k1": "v1"})
-
-			Expect(connManager.HttpFilters).To(HaveLen(2))
-			Expect(connManager.HttpFilters[0].GetName()).To(Equal(wellknown.HTTPRoleBasedAccessControl))
-			Expect(connManager.HttpFilters[1].GetName()).To(Equal(wellknown.Router))
-			Expect(connManager.LocalReplyConfig).To(BeNil())
-
-			// reset global state
-			statsWASMBytes = oldStatsWASMBytes
-			featureflags.Features.WASMStats = oldWASMflag
-		})
-
-		It("Returns proper stats config when WASM is enabled", func() {
-			mockConfigurator.EXPECT().IsTracingEnabled().AnyTimes()
-			oldWASMflag := featureflags.Features.WASMStats
-			featureflags.Features.WASMStats = true
-
-			oldStatsWASMBytes := statsWASMBytes
-			statsWASMBytes = "some bytes"
-
-			connManager := getHTTPConnectionManager(route.InboundRouteConfigName, mockConfigurator, map[string]string{"k1": "v1"})
-
-			Expect(connManager.GetHttpFilters()).To(HaveLen(4))
-			Expect(connManager.GetHttpFilters()[0].GetName()).To(Equal(wellknown.Lua))
-			Expect(connManager.GetHttpFilters()[1].GetName()).To(Equal("envoy.filters.http.wasm"))
-			Expect(connManager.GetHttpFilters()[2].GetName()).To(Equal(wellknown.HTTPRoleBasedAccessControl))
-			Expect(connManager.GetHttpFilters()[3].GetName()).To(Equal(wellknown.Router))
-
-			// reset global state
-			statsWASMBytes = oldStatsWASMBytes
-			featureflags.Features.WASMStats = oldWASMflag
 		})
 	})
 })

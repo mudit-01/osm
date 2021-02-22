@@ -12,7 +12,6 @@ import (
 	testclient "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/openservicemesh/osm/pkg/announcements"
-	"github.com/openservicemesh/osm/pkg/kubernetes/events"
 )
 
 var _ = Describe("Test Envoy configuration creation", func() {
@@ -44,18 +43,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("test GetConfigMap", func() {
 			configMap := v1.ConfigMap{
@@ -92,18 +83,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that permissive_traffic_policy_mode is enabled", func() {
 			Expect(cfg.IsPermissiveTrafficPolicyMode()).To(BeFalse())
@@ -155,18 +138,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that egress is enabled", func() {
 			Expect(cfg.IsEgressEnabled()).To(BeFalse())
@@ -217,18 +192,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that the debug server is enabled", func() {
 			Expect(cfg.IsDebugServerEnabled()).To(BeFalse())
@@ -257,17 +224,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that the config is enabled", func() {
 			Expect(cfg.IsPrometheusScrapingEnabled()).To(BeFalse())
@@ -318,18 +278,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that the config is enabled", func() {
 			Expect(cfg.IsTracingEnabled()).To(BeFalse())
@@ -382,18 +334,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		testInfoEnvoyLogLevel := "info"
 		testDebugEnvoyLogLevel := "debug"
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly identifies that the Envoy log level is error", func() {
 			Expect(cfg.GetEnvoyLogLevel()).To(Equal(testErrorEnvoyLogLevel))
@@ -465,18 +409,10 @@ var _ = Describe("Test Envoy configuration creation", func() {
 		kubeClient := testclient.NewSimpleClientset()
 		stop := make(chan struct{})
 		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
+		confChannel := cfg.Subscribe(
+			announcements.ConfigMapAdded,
+			announcements.ConfigMapDeleted,
+			announcements.ConfigMapUpdated)
 
 		It("correctly retrieves the default service cert validity duration when an invalid value is specified", func() {
 			defaultConfigMap[serviceCertValidityDurationKey] = "5" // no units, so invalid
@@ -510,62 +446,6 @@ var _ = Describe("Test Envoy configuration creation", func() {
 			<-confChannel
 
 			Expect(cfg.GetServiceCertValidityPeriod()).To(Equal(time.Duration(1 * time.Hour)))
-		})
-	})
-
-	Context("test outbound_ip_range_exclusion_list", func() {
-		kubeClient := testclient.NewSimpleClientset()
-		stop := make(chan struct{})
-		cfg := NewConfigurator(kubeClient, stop, osmNamespace, osmConfigMapName)
-		var confChannel chan interface{}
-
-		BeforeEach(func() {
-			confChannel = events.GetPubSubInstance().Subscribe(
-				announcements.ConfigMapAdded,
-				announcements.ConfigMapDeleted,
-				announcements.ConfigMapUpdated)
-		})
-
-		AfterEach(func() {
-			events.GetPubSubInstance().Unsub(confChannel)
-		})
-
-		It("correctly returns an empty list when no exclusion list is specified", func() {
-			configMap := v1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: osmNamespace,
-					Name:      osmConfigMapName,
-				},
-				Data: defaultConfigMap,
-			}
-			_, err := kubeClient.CoreV1().ConfigMaps(osmNamespace).Create(context.TODO(), &configMap, metav1.CreateOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-			// Wait for the config map change to propagate to the cache.
-			log.Info().Msg("Waiting for announcement")
-			<-confChannel
-
-			Expect(cfg.GetOutboundIPRangeExclusionList()).To(BeNil())
-		})
-
-		It("correctly retrieves the IP ranges to exclude", func() {
-			defaultConfigMap[outboundIPRangeExclusionListKey] = "1.1.1.1/32, 2.2.2.2/24"
-			configMap := v1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: osmNamespace,
-					Name:      osmConfigMapName,
-				},
-				Data: defaultConfigMap,
-			}
-			_, err := kubeClient.CoreV1().ConfigMaps(osmNamespace).Update(context.TODO(), &configMap, metav1.UpdateOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-			<-confChannel
-
-			expected := []string{"1.1.1.1/32", "2.2.2.2/24"}
-			actual := cfg.GetOutboundIPRangeExclusionList()
-			Expect(actual).Should(HaveLen(len(expected)))
-			Expect(actual).Should(ConsistOf(expected))
 		})
 	})
 })

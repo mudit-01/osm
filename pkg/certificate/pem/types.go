@@ -1,4 +1,3 @@
-// Package pem defines the types for the attributes of a Certificate.
 package pem
 
 // Certificate is an SSL certificate.

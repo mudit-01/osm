@@ -13,7 +13,7 @@ rules:
     resources: ["jobs"]
     verbs: ["list", "get", "watch"]
   - apiGroups: [""]
-    resources: ["endpoints", "namespaces", "pods", "services", "secrets", "configmaps", "serviceaccounts"]
+    resources: ["endpoints", "namespaces", "pods", "services", "secrets", "configmaps"]
     verbs: ["list", "get", "watch"]
 
   # Port forwarding is needed for the OSM pod to be able to connect
@@ -30,7 +30,7 @@ rules:
     resources: ["secrets", "configmaps"]
     verbs: ["create", "update"]
   - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    resources: ["mutatingwebhookconfigurations"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["split.smi-spec.io"]
     resources: ["trafficsplits"]
@@ -40,6 +40,12 @@ rules:
     verbs: ["list", "get", "watch"]
   - apiGroups: ["specs.smi-spec.io"]
     resources: ["httproutegroups", "tcproutes"]
+    verbs: ["list", "get", "watch"]
+
+  # Backpressure is an experimental extension of SMI.
+  # This will be removed once it becomes part of SMI.
+  - apiGroups: ["policy.openservicemesh.io"]
+    resources: ["backpressures"]
     verbs: ["list", "get", "watch"]
 
   # Used for interacting with cert-manager CertificateRequest resources.
@@ -52,7 +58,6 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}
-  namespace: {{ include "osm.namespace" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -61,7 +66,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}
-    namespace: {{ include "osm.namespace" . }}
+    namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: {{ .Release.Name }}

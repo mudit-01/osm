@@ -61,32 +61,31 @@ func (cm *CertManager) issue(cn certificate.CommonName, validityPeriod time.Dura
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, x509Root, &certPrivKey.PublicKey, rsaKeyRoot)
 	if err != nil {
-		log.Error().Err(err).Msgf("Error issuing x509.CreateCertificate command for SerialNumber=%s", serialNumber)
+		log.Error().Err(err).Msgf("Error issuing x509.CreateCertificate command for CN=%s", template.Subject.CommonName)
 		return nil, errors.Wrap(err, errCreateCert.Error())
 	}
 
 	certPEM, err := certificate.EncodeCertDERtoPEM(derBytes)
 	if err != nil {
-		log.Error().Err(err).Msgf("Error encoding certificate with SerialNumber=%s", serialNumber)
+		log.Error().Err(err).Msgf("Error encoding certificate with CN=%s", template.Subject.CommonName)
 		return nil, err
 	}
 
 	privKeyPEM, err := certificate.EncodeKeyDERtoPEM(certPrivKey)
 	if err != nil {
-		log.Error().Err(err).Msgf("Error encoding private key for certificate with SerialNumber=%s", serialNumber)
+		log.Error().Err(err).Msgf("Error encoding private key for certificate with CN=%s", template.Subject.CommonName)
 		return nil, err
 	}
 
 	cert := Certificate{
-		commonName:   cn,
-		serialNumber: certificate.SerialNumber(serialNumber.String()),
-		certChain:    certPEM,
-		privateKey:   privKeyPEM,
-		issuingCA:    cm.ca.GetCertificateChain(),
-		expiration:   template.NotAfter,
+		commonName: cn,
+		certChain:  certPEM,
+		privateKey: privKeyPEM,
+		issuingCA:  cm.ca.GetCertificateChain(),
+		expiration: template.NotAfter,
 	}
 
-	log.Trace().Msgf("Created new certificate for SerialNumber=%s; validity=%+v; expires on %+v; serial: %x", serialNumber, validityPeriod, template.NotAfter, template.SerialNumber)
+	log.Info().Msgf("Created new certificate for CN=%s; validity=%+v; expires on %+v; serial: %x", cn, validityPeriod, template.NotAfter, template.SerialNumber)
 
 	return cert, nil
 }
@@ -98,9 +97,9 @@ func (cm *CertManager) deleteFromCache(cn certificate.CommonName) {
 func (cm *CertManager) getFromCache(cn certificate.CommonName) certificate.Certificater {
 	if certInterface, exists := cm.cache.Load(cn); exists {
 		cert := certInterface.(certificate.Certificater)
-		log.Trace().Msgf("Certificate found in cache SerialNumber=%s", cert.GetSerialNumber())
+		log.Trace().Msgf("Certificate found in cache CN=%s", cn)
 		if rotor.ShouldRotate(cert) {
-			log.Trace().Msgf("Certificate found in cache but has expired SerialNumber=%s", cert.GetSerialNumber())
+			log.Trace().Msgf("Certificate found in cache but has expired CN=%s", cn)
 			return nil
 		}
 		return cert
@@ -123,7 +122,7 @@ func (cm *CertManager) IssueCertificate(cn certificate.CommonName, validityPerio
 
 	cm.cache.Store(cn, cert)
 
-	log.Trace().Msgf("It took %+v to issue certificate with SerialNumber=%s", time.Since(start), cert.GetSerialNumber())
+	log.Info().Msgf("It took %+v to issue certificate with CN=%s", time.Since(start), cn)
 
 	return cert, nil
 }
@@ -144,6 +143,8 @@ func (cm *CertManager) GetCertificate(cn certificate.CommonName) (certificate.Ce
 
 // RotateCertificate implements certificate.Manager and rotates an existing certificate.
 func (cm *CertManager) RotateCertificate(cn certificate.CommonName) (certificate.Certificater, error) {
+	log.Info().Msgf("Rotating certificate for CN=%s", cn)
+
 	start := time.Now()
 
 	cert, err := cm.issue(cn, cm.cfg.GetServiceCertValidityPeriod())
@@ -154,7 +155,7 @@ func (cm *CertManager) RotateCertificate(cn certificate.CommonName) (certificate
 	cm.cache.Store(cn, cert)
 	cm.announcements <- announcements.Announcement{}
 
-	log.Debug().Msgf("Rotated certificate with new SerialNumber=%s took %+v", cert.GetSerialNumber(), time.Since(start))
+	log.Info().Msgf("Rotating certificate CN=%s took %+v", cn, time.Since(start))
 
 	return cert, nil
 }
@@ -164,7 +165,7 @@ func (cm *CertManager) ListCertificates() ([]certificate.Certificater, error) {
 	var certs []certificate.Certificater
 	cm.cache.Range(func(cn interface{}, certInterface interface{}) bool {
 		certs = append(certs, certInterface.(certificate.Certificater))
-		return true // continue the iteration
+		return true
 	})
 	return certs, nil
 }

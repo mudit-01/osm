@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestSetupMutualTLS(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	type setupMutualTLStest struct {
 		certPem       []byte
@@ -58,7 +58,7 @@ func TestSetupMutualTLS(t *testing.T) {
 }
 
 func TestValidateClient(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	type validateClientTest struct {
 		ctx           context.Context
@@ -83,14 +83,12 @@ func TestValidateClient(t *testing.T) {
 	}
 
 	for _, vct := range validateClientTests {
-		certCN, certSerialNumber, err := ValidateClient(vct.ctx, vct.commonNames)
+		result, err := ValidateClient(vct.ctx, vct.commonNames)
 		if err != nil {
-			assert.Equal(certCN, certificate.CommonName(""))
-			assert.Equal(certSerialNumber, certificate.SerialNumber(""))
+			assert.Equal(result, certificate.CommonName(""))
 			assert.True(errors.Is(err, vct.expectedError))
 		} else {
-			assert.NotNil(certCN)
-			assert.NotNil(certSerialNumber)
+			assert.NotNil(result)
 			assert.Empty(vct.expectedError)
 		}
 	}

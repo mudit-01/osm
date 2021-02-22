@@ -1,6 +1,6 @@
 ---
-title: "Docs"
-description: "Open Service Mesh documentation and resources."
+title: "Docs Home"
+description: "OSM Docs Home"
 type: docs
 ---
 

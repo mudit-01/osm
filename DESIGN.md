@@ -36,7 +36,7 @@ OSM ships out-of-the-box with all necessary components to deploy a complete serv
 
 
 ## OSM Components & Interactions
-![OSM Components & Interactions](./docs/content/images/osm-components-and-interactions.png)
+![OSM Components & Interactions](./docs/images/osm-components-and-interactions.png)
 
 ### Containers
 When a new Pod creation is initiated, OSM's
@@ -107,9 +107,9 @@ This component:
 
 This section outlines the conventions adopted and guiding the development of the Open Service Mesh (OSM). Components discussed in this section:
   - (A) Proxy [sidecar](https://docs.microsoft.com/en-us/azure/architecture/patterns/sidecar) - Envoy or other reverse-proxy with service-mesh capabilities
-  - (B) [Proxy Certificate](#b-proxy-tls-certificate) - unique X.509 certificate issued to the specific proxy by the [Certificate Manager](#2-certificate-manager)
+  - (B) [Proxy Certificate](#proxy-tls-certificate) - unique X.509 certificate issued to the specific proxy by the [Certificate Manager](#2-certificate-manager)
   - (C) Service - [Kubernetes service resource](https://kubernetes.io/docs/concepts/services-networking/service/) referenced in SMI Spec
-  - (D) [Service Certificate](#d-service-tls-certificate) - X.509 certificate issued to the service
+  - (D) [Service Certificate](#service-tls-certificate) - X.509 certificate issued to the service
   - (E) Policy - [SMI Spec](https://smi-spec.io/) traffic policy enforced by the target service's proxy
   - Examples of service endpoints handling traffic for the given service:
     - (F) Azure VM - process running on an Azure VM, listening for connections on IP 1.2.3.11, port 81.
@@ -306,6 +306,9 @@ type MeshCataloger interface {
 	// ListAllowedInboundServices lists the inbound services allowed to connect to the given service.
 	ListAllowedInboundServices(service.MeshService) ([]service.MeshService, error)
 
+	// ListAllowedOutboundServices lists the services the given service is allowed outbound connections to.
+	ListAllowedOutboundServices(service.MeshService) ([]service.MeshService, error)
+
 	// ListAllowedInboundServiceAccounts lists the downstream service accounts that can connect to the given service account
 	ListAllowedInboundServiceAccounts(service.K8sServiceAccount) ([]service.K8sServiceAccount, error)
 
@@ -337,19 +340,14 @@ type MeshCataloger interface {
 	// GetServicesForServiceAccount returns a list of services corresponding to a service account
 	GetServicesForServiceAccount(service.K8sServiceAccount) ([]service.MeshService, error)
 
-  // GetResolvableHostnamesForUpstreamService returns the hostnames over which an upstream service is accessible from a downstream service
-  // TODO : remove as a part of routes refactor (#2397)
+	// GetResolvableHostnamesForUpstreamService returns the hostnames over which an upstream service is accessible from a downstream service
 	GetResolvableHostnamesForUpstreamService(downstream, upstream service.MeshService) ([]string, error)
 
 	//GetWeightedClusterForService returns the weighted cluster for a service
 	GetWeightedClusterForService(service service.MeshService) (service.WeightedCluster, error)
 
-  // GetIngressRoutesPerHost returns the HTTP route matches per host associated with an ingress service
-  // TODO : remove as a part of routes refactor cleanup (#2397)
-  GetIngressRoutesPerHost(service.MeshService) (map[string][]trafficpolicy.HTTPRouteMatch, error)
-
-  // GetIngressPoliciesForService returns the inbound traffic policies associated with an ingress service
-  GetIngressPoliciesForService(service.MeshService, service.K8sServiceAccount) ([]*trafficpolicy.InboundTrafficPolicy, error)
+	// GetIngressRoutesPerHost returns the HTTP routes per host associated with an ingress service
+	GetIngressRoutesPerHost(service.MeshService) (map[string][]trafficpolicy.HTTPRoute, error)
 }
 ```
 
@@ -470,16 +468,16 @@ type MeshSpec interface {
 	GetService(service.MeshService) *corev1.Service
 
 	// ListServices Lists Kubernets Service resources that are part of monitored namespaces
-    ListServices() []*corev1.Service
-
-	// ListServiceAccounts Lists Kubernets Service Account resources that are part of monitored namespaces
-    ListServiceAccounts() []*corev1.ServiceAccounts
+	ListServices() []*corev1.Service
 
 	// ListHTTPTrafficSpecs lists SMI HTTPRouteGroup resources
 	ListHTTPTrafficSpecs() []*spec.HTTPRouteGroup
 
 	// ListTrafficTargets lists SMI TrafficTarget resources
 	ListTrafficTargets() []*target.TrafficTarget
+
+	// GetBackpressurePolicy fetches the Backpressure policy for the MeshService
+	GetBackpressurePolicy(service.MeshService) *backpressure.Backpressure
 
 	// GetAnnouncementsChannel returns the channel on which SMI client makes announcements
 	GetAnnouncementsChannel() <-chan interface{}

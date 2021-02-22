@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	tassert "github.com/stretchr/testify/assert"
+	gomock "github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/openservicemesh/osm/pkg/certificate"
 	"github.com/openservicemesh/osm/pkg/certificate/providers/tresor"
@@ -14,11 +14,11 @@ import (
 
 // Tests getCertificateHandler through HTTP handler returns a certificate stringified
 func TestGetCertHandler(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 	mockCtrl := gomock.NewController(t)
 	mock := NewMockCertificateManagerDebugger(mockCtrl)
 
-	ds := DebugConfig{
+	ds := debugConfig{
 		certDebugger: mock,
 	}
 

@@ -1,4 +1,3 @@
-// Package rds implements Envoy's Route Discovery Service (RDS).
 package rds
 
 import (

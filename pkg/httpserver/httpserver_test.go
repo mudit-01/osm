@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/openservicemesh/osm/pkg/health"
 	"github.com/openservicemesh/osm/pkg/metricsstore"
@@ -34,22 +34,14 @@ func recordCall(ts *httptest.Server, path string) *http.Response {
 }
 
 func TestNewHTTPServer(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	mockCtrl := gomock.NewController(t)
 	mockProbe := health.NewMockProbes(mockCtrl)
 	testProbes := []health.Probes{mockProbe}
-	metricsStore := metricsstore.DefaultMetricsStore
+	metricsStore := metricsstore.NewMetricStore("TBD_NameSpace", "TBD_PodName")
 
-	httpServ := NewHTTPServer(testPort)
-
-	httpServ.AddHandlers(map[string]http.Handler{
-		"/health/ready": health.ReadinessHandler(testProbes, nil),
-		"/health/alive": health.LivenessHandler(testProbes, nil),
-	})
-
-	httpServ.AddHandler("/metrics", metricsStore.Handler())
-
+	httpServ := NewHTTPServer(testProbes, nil, metricsStore, testPort)
 	testServer := &httptest.Server{
 		Config: httpServ.server,
 	}
@@ -90,10 +82,4 @@ func TestNewHTTPServer(t *testing.T) {
 	testServer.Config.Handler.ServeHTTP(w, req)
 	respM := w.Result()
 	assert.Equal(http.StatusOK, respM.StatusCode)
-
-	err := httpServ.Start()
-	assert.Nil(err)
-
-	err = httpServ.Stop()
-	assert.Nil(err)
 }

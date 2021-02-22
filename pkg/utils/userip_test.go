@@ -5,14 +5,14 @@ import (
 	"net"
 	"testing"
 
-	tassert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/peer"
 
 	"github.com/openservicemesh/osm/pkg/tests"
 )
 
 func TestGetIPFromContext(t *testing.T) {
-	assert := tassert.New(t)
+	assert := assert.New(t)
 
 	ctxList := map[context.Context]net.Addr{
 		context.Background(): nil,
